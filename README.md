@@ -100,7 +100,7 @@
     </div>
     <div class="card">
       <div class="lesson-title">Lesson 3</div>
-      <div class="lesson-desc">ニパウイルス学習</div>
+      <div class="lesson-desc">多部隊合同訓練システム</div>
       <a href="lesson3/index.html" class="button">▶ 学習する</a>
     </div>
     <div class="card">
