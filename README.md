@@ -105,7 +105,7 @@
     </div>
     <div class="card">
       <div class="lesson-title">Lesson 4</div>
-      <div class="lesson-desc">林野火災時の空中消火</div>
+      <div class="lesson-desc">消防物品貸借管理</div>
       <a href="lesson4/index.html" class="button">▶ 学習する</a>
     </div>
     <div class="card">
