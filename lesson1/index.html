@@ -3,1120 +3,587 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>火災調査デジタル野帳 | Fire Investigation Log</title>
+    <title>消防物品貸借管理</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Import Map (React, ReactDOM, Lucide Icons from CDN) -->
-    <script type="importmap">
-    {
-      "imports": {
-        "react": "https://esm.sh/react@18.2.0",
-        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
-        "lucide-react": "https://esm.sh/lucide-react@0.294.0"
-      }
-    }
-    </script>
-
-    <!-- Babel for JSX compilation in browser -->
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel (for JSX) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <style>
-        /* Custom Animations */
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+    <!-- Firebase SDKs (v9 Compat or Modular via CDN is tricky in vanilla, using compat for ease in single file or module script) -->
+    <!-- We will use ES modules with Babel for the cleanest modern React/Firebase integration in a single file -->
+    <script type="importmap">
+      {
+        "imports": {
+          "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+          "firebase/auth": "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js",
+          "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"
         }
-        .animate-fadeIn {
-            animation: fadeIn 0.3s ease-out forwards;
-        }
-        
-        /* Print Styles */
-        @media print {
-            .no-print { display: none !important; }
-            body { background: white; }
-            .print-content { 
-                box-shadow: none !important; 
-                border: none !important; 
-                width: 100% !important; 
-                max-width: none !important;
-                padding: 0 !important;
-            }
-            .page-break-inside-avoid {
-                page-break-inside: avoid;
-            }
-        }
-    </style>
+      }
+    </script>
 </head>
-<body class="bg-zinc-100 font-sans text-slate-900 selection:bg-amber-200 selection:text-slate-900">
+<body class="bg-slate-50 text-slate-800">
     <div id="root"></div>
 
-    <!-- Application Logic -->
     <script type="text/babel" data-type="module">
-        import React, { useState, useEffect } from 'react';
-        import { createRoot } from 'react-dom/client';
+        import { initializeApp } from 'firebase/app';
         import { 
-            ClipboardList, User, Flame, Clock, MapPin, Save, Trash2, Plus, 
-            ChevronDown, ChevronUp, FileText, ArrowLeft, AlertTriangle, 
-            Download, Copy, Printer, X, CheckCircle, AlertCircle, Image as ImageIcon, Camera
-        } from 'lucide-react';
+            getAuth, 
+            signInAnonymously, 
+            onAuthStateChanged 
+        } from 'firebase/auth';
+        import { 
+            getFirestore, 
+            collection, 
+            addDoc, 
+            updateDoc, 
+            doc, 
+            onSnapshot, 
+            serverTimestamp, 
+            query, 
+            orderBy, 
+            Timestamp 
+        } from 'firebase/firestore';
 
-        // ---------------- Helper Functions ----------------
+        const React = window.React;
+        const { useState, useEffect, useMemo } = React;
 
-        // 画像圧縮ユーティリティ
-        const compressImage = (file) => {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = (event) => {
-                    const img = new Image();
-                    img.src = event.target.result;
-                    img.onload = () => {
-                        const canvas = document.createElement('canvas');
-                        const MAX_WIDTH = 800; // 幅を800pxに制限
-                        const MAX_HEIGHT = 800;
-                        let width = img.width;
-                        let height = img.height;
-
-                        if (width > height) {
-                            if (width > MAX_WIDTH) {
-                                height *= MAX_WIDTH / width;
-                                width = MAX_WIDTH;
-                            }
-                        } else {
-                            if (height > MAX_HEIGHT) {
-                                width *= MAX_HEIGHT / height;
-                                height = MAX_HEIGHT;
-                            }
-                        }
-                        canvas.width = width;
-                        canvas.height = height;
-                        const ctx = canvas.getContext('2d');
-                        ctx.drawImage(img, 0, 0, width, height);
-                        // JPEG形式、品質0.6で圧縮してBase64化
-                        resolve(canvas.toDataURL('image/jpeg', 0.6)); 
-                    };
-                    img.onerror = (error) => reject(error);
-                };
-                reader.onerror = (error) => reject(error);
-            });
+        // ==========================================
+        //  設定エリア (ここを修正してください)
+        // ==========================================
+        const firebaseConfig = {
+            // ここにFirebaseコンソールから取得した設定を貼り付けてください
+            apiKey: "AIzaSyAv0PN4bWerICqnu2mAGX50EL8E4iSUvqQ",
+            authDomain: "fire-lending-app.firebaseapp.com",
+            projectId: "fire-lending-app",
+            storageBucket: "fire-lending-app.firebasestorage.app",
+            messagingSenderId: "879433305434",
+            appId: "1:879433305434:web:f772d61dc8bdbeffce3763"
         };
+        
+        // アプリID（データベース内の保存場所を区別するためのID。自由に変更可）
+        const appId = "firestation-lending-app"; 
 
-        // ---------------- UI Components ----------------
+        // ==========================================
+        //  初期化処理
+        // ==========================================
+        let app, auth, db;
+        try {
+            if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+                console.warn("Firebase設定がまだ行われていません。コード内のfirebaseConfigを修正してください。");
+            } else {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+            }
+        } catch (e) {
+            console.error("Firebase Initialization Error:", e);
+        }
 
-        // カスタムモーダルコンポーネント
-        const CustomModal = ({ isOpen, onClose, title, message, type, onConfirm }) => {
-            if (!isOpen) return null;
-
-            return (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-                <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200 transform transition-all scale-100">
-                    {/* Header */}
-                    <div className={`px-6 py-4 flex items-center gap-3 border-b ${type === 'confirm' || type === 'error' ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'}`}>
-                    {type === 'confirm' || type === 'error' ? (
-                        <AlertCircle className="text-red-500" size={24} />
-                    ) : (
-                        <CheckCircle className="text-emerald-500" size={24} />
-                    )}
-                    <h3 className={`text-lg font-bold ${type === 'confirm' || type === 'error' ? 'text-red-900' : 'text-slate-800'}`}>
-                        {title}
-                    </h3>
-                    <button onClick={onClose} className="ml-auto text-slate-400 hover:text-slate-600 transition-colors">
-                        <X size={20} />
-                    </button>
-                    </div>
-                    
-                    {/* Body */}
-                    <div className="p-6 text-slate-600 leading-relaxed whitespace-pre-wrap">
-                    {message}
-                    </div>
-                    
-                    {/* Footer */}
-                    <div className="px-6 py-4 bg-slate-50 flex justify-end gap-3">
-                    {type === 'confirm' ? (
-                        <>
-                        <button 
-                            onClick={onClose}
-                            className="px-4 py-2 rounded-lg font-bold text-slate-600 hover:bg-slate-200 transition-colors"
-                        >
-                            キャンセル
-                        </button>
-                        <button 
-                            onClick={() => { onConfirm(); onClose(); }}
-                            className="px-4 py-2 rounded-lg font-bold text-white bg-red-500 hover:bg-red-600 shadow-md hover:shadow-lg transition-all"
-                        >
-                            削除する
-                        </button>
-                        </>
-                    ) : (
-                        <button 
-                        onClick={onClose}
-                        className="px-6 py-2 rounded-lg font-bold text-white bg-slate-800 hover:bg-slate-900 shadow-md hover:shadow-lg transition-all"
-                        >
-                        OK
-                        </button>
-                    )}
-                    </div>
-                </div>
-                </div>
-            );
-        };
-
-        const SectionHeader = ({ title, icon: Icon, sectionName, activeSection, setActiveSection }) => (
-        <button 
-            type="button"
-            onClick={() => setActiveSection(activeSection === sectionName ? null : sectionName)}
-            className={`w-full flex items-center justify-between p-5 mb-3 rounded-lg transition-all duration-300 border ${
-            activeSection === sectionName 
-                ? 'bg-slate-800 text-amber-50 border-slate-800 shadow-lg transform -translate-y-0.5' 
-                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50 hover:border-slate-300 shadow-sm'
-            }`}
-        >
-            <div className="flex items-center gap-3 font-bold text-lg tracking-wide">
-            <Icon size={20} className={activeSection === sectionName ? "text-amber-400" : "text-slate-400"} />
-            {title}
-            </div>
-            {activeSection === sectionName ? <ChevronUp size={20} className="text-amber-400" /> : <ChevronDown size={20} className="text-slate-400" />}
-        </button>
-        );
-
-        const InputField = ({ label, value, onChange, placeholder, type = "text", required = false }) => (
-        <div className="mb-6 w-full group relative z-0">
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ml-1 transition-colors group-focus-within:text-amber-700">
-            {label} {required && <span className="text-red-500">*</span>}
-            </label>
-            <input
-            type={type}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            onClick={(e) => e.stopPropagation()} 
-            placeholder={placeholder}
-            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-800 focus:border-transparent outline-none transition-all duration-200 shadow-inner relative z-10"
-            />
-        </div>
-        );
-
-        // シンプルなドロップダウン時間入力コンポーネント
-        const TimeInput = ({ label, value, onChange, required = false, compact = false }) => {
-            const [hour, minute] = (value || ':').split(':');
-            const hours = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
-            const minutes = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
-
-            const handleHourChange = (e) => {
-                const newHour = e.target.value;
-                const currentMinute = minute || '00';
-                if (newHour === '') onChange('');
-                else onChange(`${newHour}:${currentMinute}`);
-            };
-
-            const handleMinuteChange = (e) => {
-                const newMinute = e.target.value;
-                const currentHour = hour || '00';
-                if (newMinute === '') onChange(`${currentHour}:00`); 
-                else onChange(`${currentHour}:${newMinute}`);
-            };
-
-            return (
-                <div className={`${compact ? 'w-auto' : 'mb-6 w-full'} group relative z-0`}>
-                    {label && (
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ml-1 transition-colors group-focus-within:text-amber-700">
-                            {label} {required && <span className="text-red-500">*</span>}
-                        </label>
-                    )}
-                    <div className="flex items-center gap-1">
-                        <div className="relative">
-                            <select
-                                value={hour || ''}
-                                onChange={handleHourChange}
-                                className={`appearance-none bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:bg-white focus:ring-2 focus:ring-slate-800 outline-none shadow-inner ${compact ? 'py-1.5 pl-2 pr-6 text-sm' : 'p-3 pr-8 w-full'}`}
-                            >
-                                <option value="">--</option>
-                                {hours.map(h => <option key={h} value={h}>{h}</option>)}
-                            </select>
-                            <ChevronDown className={`absolute pointer-events-none text-slate-400 ${compact ? 'right-1 top-2 w-4 h-4' : 'right-3 top-3.5 w-5 h-5'}`} />
-                        </div>
-                        <span className="text-slate-400 font-bold">:</span>
-                        <div className="relative">
-                            <select
-                                value={minute || ''}
-                                onChange={handleMinuteChange}
-                                className={`appearance-none bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:bg-white focus:ring-2 focus:ring-slate-800 outline-none shadow-inner ${compact ? 'py-1.5 pl-2 pr-6 text-sm' : 'p-3 pr-8 w-full'}`}
-                            >
-                                <option value="">--</option>
-                                {minutes.map(m => <option key={m} value={m}>{m}</option>)}
-                            </select>
-                            <ChevronDown className={`absolute pointer-events-none text-slate-400 ${compact ? 'right-1 top-2 w-4 h-4' : 'right-3 top-3.5 w-5 h-5'}`} />
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
-        const TextArea = ({ label, value, onChange, placeholder, rows = 3 }) => (
-        <div className="mb-6 group relative z-0">
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ml-1 transition-colors group-focus-within:text-amber-700">
-            {label}
-            </label>
-            <textarea
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            onClick={(e) => e.stopPropagation()} 
-            placeholder={placeholder}
-            rows={rows}
-            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 placeholder-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-800 focus:border-transparent outline-none transition-all duration-200 shadow-inner relative z-10"
-            />
-        </div>
-        );
-
-        // ---------------- Views ----------------
-
-        const ListView = ({ reports, createNewReport, setCurrentReport, setView, deleteReport }) => (
-        <div className="p-6 max-w-4xl mx-auto">
-            <div className="flex flex-col md:flex-row justify-between items-end md:items-center mb-10 pb-6 border-b border-slate-200">
-            <div>
-                <h1 className="text-3xl font-extrabold text-slate-800 flex items-center gap-3 tracking-tight">
-                <div className="p-2 bg-slate-800 rounded-lg shadow-lg">
-                    <Flame className="text-amber-400 fill-amber-400" size={24} />
-                </div>
-                <span>DIGITAL<span className="text-slate-400 mx-2">|</span>FIELD NOTE</span>
-                </h1>
-                <p className="text-xs font-bold text-slate-500 mt-2 tracking-widest uppercase ml-1">Fire Investigation Log System</p>
-            </div>
-            <button 
-                onClick={createNewReport}
-                className="mt-4 md:mt-0 bg-slate-800 hover:bg-slate-900 text-white px-6 py-3 rounded-lg flex items-center gap-2 shadow-xl hover:shadow-2xl hover:-translate-y-1 transition-all duration-300 font-bold border-b-4 border-slate-950 active:border-b-0 active:translate-y-1"
+        // ==========================================
+        //  アイコンコンポーネント (Lucide簡易版)
+        // ==========================================
+        const IconBase = ({ children, className }) => (
+            <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                width="24" height="24" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                className={className}
             >
-                <Plus size={18} className="text-amber-400" /> 新規調査作成
-            </button>
-            </div>
-
-            {reports.length === 0 ? (
-            <div className="text-center py-24 bg-white rounded-2xl border border-slate-200 shadow-sm">
-                <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <ClipboardList className="text-slate-300" size={32} />
-                </div>
-                <p className="text-slate-400 font-medium mb-6">記録されたデータはありません</p>
-                <button onClick={createNewReport} className="text-amber-700 font-bold hover:text-amber-800 hover:underline transition-colors">
-                新しい調査を開始する
-                </button>
-            </div>
-            ) : (
-            <div className="grid gap-5">
-                {reports.map(report => (
-                <div key={report.id} className="group bg-white p-5 rounded-xl shadow-sm border border-slate-100 hover:shadow-xl hover:border-amber-200 transition-all duration-300 relative overflow-hidden">
-                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-slate-200 group-hover:bg-amber-400 transition-colors"></div>
-                    <div className="flex justify-between items-start pl-3">
-                    <div onClick={() => { setCurrentReport(report); setView('edit'); }} className="cursor-pointer flex-1">
-                        <h3 className="font-bold text-xl text-slate-800 mb-2 group-hover:text-amber-700 transition-colors">
-                        {report.basicInfo.incidentName || '名称未設定案件'}
-                        </h3>
-                        <div className="flex gap-4 text-sm text-slate-500 font-medium">
-                        <span className="flex items-center gap-1.5"><Clock size={14} className="text-amber-600"/> {report.basicInfo.date || '---'}</span>
-                        <span className="flex items-center gap-1.5"><MapPin size={14} className="text-amber-600"/> {report.basicInfo.location || '---'}</span>
-                        </div>
-                    </div>
-                    <div className="flex gap-2 relative z-10">
-                        <button 
-                        type="button"
-                        onClick={(e) => { 
-                            e.stopPropagation();
-                            setCurrentReport(report); 
-                            setView('preview'); 
-                        }}
-                        className="p-2 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
-                        title="出力プレビュー"
-                        >
-                        <FileText size={20} />
-                        </button>
-                        <button 
-                        type="button"
-                        onClick={(e) => { 
-                            e.stopPropagation();
-                            deleteReport(report.id);
-                        }}
-                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="削除"
-                        >
-                        <Trash2 size={20} />
-                        </button>
-                    </div>
-                    </div>
-                </div>
-                ))}
-            </div>
-            )}
-        </div>
+                {children}
+            </svg>
         );
 
-        const EditView = ({ 
-        currentReport, 
-        setView, 
-        saveCurrentReport, 
-        deleteReport, 
-        activeSection, 
-        setActiveSection, 
-        updateReport, 
-        addPerson, 
-        updatePerson, 
-        removePerson, 
-        addTimelineEvent, 
-        updateTimelineEvent, 
-        removeTimelineEvent,
-        addPhoto,
-        removePhoto,
-        updatePhoto
-        }) => {
-        if (!currentReport) return null;
+        const Truck = (props) => <IconBase {...props}><path d="M5 18H3c-.6 0-1-.4-1-1V7c0-.6.4-1 1-1h10c.6 0 1 .4 1 1v11"/><path d="M14 9h4l4 4v4c0 .6-.4 1-1 1h-2"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></IconBase>;
+        const Building2 = (props) => <IconBase {...props}><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></IconBase>;
+        const Edit3 = (props) => <IconBase {...props}><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></IconBase>;
+        const ArrowRightLeft = (props) => <IconBase {...props}><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></IconBase>;
+        const CheckCircle2 = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></IconBase>;
+        const AlertCircle = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></IconBase>;
+        const CalendarIcon = (props) => <IconBase {...props}><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></IconBase>;
+        const ClipboardList = (props) => <IconBase {...props}><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></IconBase>;
+        const PlusCircle = (props) => <IconBase {...props}><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></IconBase>;
+        const CheckSquare = (props) => <IconBase {...props}><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></IconBase>;
+        const History = (props) => <IconBase {...props}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></IconBase>;
 
-        const sortedTimelineForEdit = [...currentReport.timeline].sort((a, b) => {
-            if (!a.time && !b.time) return 0;
-            if (!a.time) return 1;
-            if (!b.time) return -1;
-            return a.time.localeCompare(b.time);
-        });
+        // ==========================================
+        //  メインアプリ
+        // ==========================================
 
-        const handlePhotoUpload = async (e) => {
-            if (e.target.files && e.target.files[0]) {
-                const file = e.target.files[0];
-                try {
-                    const compressedDataUrl = await compressImage(file);
-                    addPhoto(compressedDataUrl);
-                } catch (error) {
-                    console.error("Image compression failed", error);
-                    alert("画像の読み込みに失敗しました。");
-                }
-                // 入力値をリセットして同じファイルを再度選択できるようにする
-                e.target.value = '';
+        const formatDate = (timestamp) => {
+            if (!timestamp || typeof timestamp.toDate !== 'function') return '---';
+            try {
+                const date = timestamp.toDate();
+                return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
+            } catch (e) {
+                return '---';
             }
         };
 
-        return (
-            <div className="pb-24 bg-zinc-50 min-h-screen">
-            {/* Luxury Sticky Header */}
-            <div className="bg-slate-900 border-b border-slate-800 sticky top-0 z-20 px-4 py-4 flex justify-between items-center shadow-2xl">
-                <div className="flex items-center">
-                <button onClick={() => setView('list')} className="text-slate-400 hover:text-white p-2 rounded-full hover:bg-slate-800 transition-colors" title="一覧に戻る">
-                    <ArrowLeft size={22} />
-                </button>
-                <button 
-                    onClick={() => deleteReport(currentReport.id)}
-                    className="ml-2 text-slate-500 hover:text-red-500 p-2 rounded-full hover:bg-slate-800 transition-colors"
-                    title="この記録を削除"
-                >
-                    <Trash2 size={20} />
-                </button>
-                </div>
+        function App() {
+            const [user, setUser] = useState(null);
+            const [transactions, setTransactions] = useState([]);
+            const [myUnit, setMyUnit] = useState(localStorage.getItem('fireStation_myUnit') || '');
+            const [view, setView] = useState('dashboard');
+            const [loading, setLoading] = useState(true);
+            const [configError, setConfigError] = useState(false);
 
-                <div className="text-center">
-                <h2 className="font-bold text-white text-sm md:text-base tracking-wider">EDIT MODE</h2>
-                <p className="text-xs text-amber-500 font-mono">{currentReport.basicInfo.date || 'DATE NOT SET'}</p>
-                </div>
-                <button onClick={saveCurrentReport} className="text-slate-900 bg-amber-400 hover:bg-amber-300 px-5 py-1.5 rounded shadow-lg font-bold text-sm transition-all hover:shadow-amber-400/20">
-                SAVE
-                </button>
-            </div>
+            useEffect(() => {
+                if (!auth) {
+                    setConfigError(true);
+                    setLoading(false);
+                    return;
+                }
 
-            <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6">
-                
-                <div className="bg-white border-l-4 border-amber-500 p-4 shadow-sm rounded-r-lg flex items-start gap-3">
-                <AlertTriangle size={20} className="text-amber-500 shrink-0 mt-0.5" />
-                <div className="text-sm text-slate-600 leading-relaxed">
-                    <span className="font-bold text-slate-800 block mb-1">法的リスク管理</span>
-                    記述は客観的事実に留め、推測を含む場合はその旨を明記してください。
-                </div>
-                </div>
+                // 匿名ログイン
+                signInAnonymously(auth).catch((error) => {
+                    console.error("Auth error:", error);
+                });
 
-                {/* 1. Basic Info */}
-                <div className="shadow-sm rounded-lg overflow-hidden">
-                <SectionHeader 
-                    title="基本情報" 
-                    icon={ClipboardList} 
-                    sectionName="basic" 
-                    activeSection={activeSection}
-                    setActiveSection={setActiveSection}
-                />
-                {activeSection === 'basic' && (
-                    <div className="bg-white p-6 rounded-b-lg border-x border-b border-slate-200 animate-fadeIn">
-                    <InputField 
-                        label="案件名" 
-                        value={currentReport.basicInfo.incidentName} 
-                        onChange={(val) => updateReport('basicInfo', {...currentReport.basicInfo, incidentName: val})}
-                        placeholder="例：〇〇町2丁目 一般住宅火災"
-                    />
-                    <div className="grid grid-cols-2 gap-6">
-                        <InputField 
-                        label="覚知日時" 
-                        type="date"
-                        value={currentReport.basicInfo.date} 
-                        onChange={(val) => updateReport('basicInfo', {...currentReport.basicInfo, date: val})}
-                        />
-                        <TimeInput 
-                        label="時刻" 
-                        value={currentReport.basicInfo.time} 
-                        onChange={(val) => updateReport('basicInfo', {...currentReport.basicInfo, time: val})}
-                        />
+                const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
+                return () => unsubscribe();
+            }, []);
+
+            useEffect(() => {
+                if (!user || !db) return;
+
+                const q = query(
+                    collection(db, 'artifacts', appId, 'public', 'data', 'lending_transactions')
+                );
+
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const data = snapshot.docs.map(doc => {
+                        const d = doc.data();
+                        return {
+                            id: doc.id,
+                            ...d,
+                            lender: typeof d.lender === 'string' ? d.lender : '不明',
+                            borrower: typeof d.borrower === 'string' ? d.borrower : '不明',
+                        };
+                    });
+                    data.sort((a, b) => {
+                        const dateA = a.createdAt?.toMillis() || 0;
+                        const dateB = b.createdAt?.toMillis() || 0;
+                        return dateB - dateA;
+                    });
+                    setTransactions(data);
+                    setLoading(false);
+                }, (error) => {
+                    console.error("Firestore error:", error);
+                    setLoading(false);
+                });
+
+                return () => unsubscribe();
+            }, [user]);
+
+            const handleUnitChange = (e) => {
+                const val = e.target.value;
+                setMyUnit(val);
+                localStorage.setItem('fireStation_myUnit', val);
+            };
+
+            const activeTransactions = transactions.filter(t => t.status === 'active');
+            const lentByMe = myUnit ? activeTransactions.filter(t => t.lender === myUnit) : [];
+            const borrowedByMe = myUnit ? activeTransactions.filter(t => t.borrower === myUnit) : [];
+
+            const updateStatus = async (item, newStatus) => {
+                try {
+                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lending_transactions', item.id), {
+                        status: newStatus,
+                        updatedAt: serverTimestamp()
+                    });
+                } catch (e) {
+                    console.error(e);
+                    alert("更新に失敗しました。権限を確認してください。");
+                }
+            };
+
+            if (configError) {
+                return (
+                    <div className="p-10 text-center">
+                        <h1 className="text-xl font-bold text-red-600 mb-4">設定が必要です</h1>
+                        <p>HTMLファイル内の <code>firebaseConfig</code> を編集して、FirebaseのAPIキー等を設定してください。</p>
                     </div>
-                    <InputField 
-                        label="発生場所" 
-                        value={currentReport.basicInfo.location} 
-                        onChange={(val) => updateReport('basicInfo', {...currentReport.basicInfo, location: val})}
-                        placeholder="住所または目標物"
-                    />
-                    <div className="grid grid-cols-2 gap-6">
-                        <InputField 
-                        label="天候" 
-                        value={currentReport.basicInfo.weather} 
-                        onChange={(val) => updateReport('basicInfo', {...currentReport.basicInfo, weather: val})}
-                        placeholder="晴れ、強風など"
-                        />
-                        <InputField 
-                        label="気温・湿度" 
-                        value={currentReport.basicInfo.temperature} 
-                        onChange={(val) => updateReport('basicInfo', {...currentReport.basicInfo, temperature: val})}
-                        placeholder="24℃ / 45%"
-                        />
-                    </div>
-                    </div>
-                )}
-                </div>
+                );
+            }
 
-                {/* 2. People Involved */}
-                <div className="shadow-sm rounded-lg overflow-hidden">
-                <SectionHeader 
-                    title="関係者・目撃者" 
-                    icon={User} 
-                    sectionName="people" 
-                    activeSection={activeSection}
-                    setActiveSection={setActiveSection}
-                />
-                {activeSection === 'people' && (
-                    <div className="bg-white p-6 rounded-b-lg border-x border-b border-slate-200">
-                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-6 border-b border-slate-100 pb-2">
-                        PERSONS INVOLVED
-                    </p>
-                    {currentReport.people.map((person, index) => (
-                        <div key={person.id} className="mb-8 p-6 bg-slate-50 rounded-xl border border-slate-200 relative shadow-inner">
-                        <div className="absolute -top-3 -left-3 w-8 h-8 bg-slate-800 text-white rounded-full flex items-center justify-center font-bold shadow-md text-sm">
-                            {index + 1}
-                        </div>
-                        <button 
-                            type="button" 
-                            onClick={() => removePerson(person.id)}
-                            className="absolute top-4 right-4 text-slate-400 hover:text-red-500 transition-colors p-1"
-                        >
-                            <Trash2 size={18} />
-                        </button>
-                        
-                        <div className="mb-5">
-                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ml-1">区分</label>
-                            <div className="relative">
-                            <select 
-                                value={person.type}
-                                onChange={(e) => updatePerson(person.id, 'type', e.target.value)}
-                                className="w-full p-3 bg-white border border-slate-300 rounded-lg appearance-none text-slate-800 font-bold focus:ring-2 focus:ring-slate-800 focus:border-transparent outline-none"
-                            >
-                                <option>第一発見者</option>
-                                <option>初期消火者</option>
-                                <option>人名救助者</option>
-                                <option>通報者</option>
-                                <option>所有者・管理者</option>
-                                <option>その他目撃者</option>
-                            </select>
-                            <ChevronDown className="absolute right-3 top-3.5 text-slate-400 pointer-events-none" size={16} />
+            return (
+                <div className="min-h-screen bg-slate-50 text-slate-800 font-sans pb-20">
+                    {/* Header */}
+                    <header className="bg-red-600 text-white shadow-lg sticky top-0 z-50">
+                        <div className="max-w-md mx-auto px-4 py-3 flex justify-between items-center">
+                            <div className="flex items-center space-x-2">
+                                <Truck className="h-6 w-6" />
+                                <h1 className="text-lg font-bold tracking-wide">消防物品貸借管理</h1>
+                            </div>
+                            <div className="text-xs bg-white/20 px-2 py-1 rounded">
+                                {formatDate(Timestamp.now())}
                             </div>
                         </div>
                         
-                        <InputField 
-                            label="氏名" 
-                            value={person.name} 
-                            onChange={(val) => updatePerson(person.id, 'name', val)}
-                        />
-
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
-                            <div className="w-full group">
-                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 ml-1 group-focus-within:text-amber-700">性別</label>
-                            <div className="relative">
-                                <select
-                                value={person.gender || ''}
-                                onChange={(e) => updatePerson(person.id, 'gender', e.target.value)}
-                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:bg-white focus:ring-2 focus:ring-slate-800 outline-none transition-all appearance-none shadow-inner"
-                                >
-                                <option value="">未選択</option>
-                                <option value="男性">男性</option>
-                                <option value="女性">女性</option>
-                                <option value="その他">その他</option>
-                                <option value="不明">不明</option>
-                                </select>
-                                <ChevronDown className="absolute right-3 top-3.5 text-slate-400 pointer-events-none" size={14} />
+                        <div className="bg-red-800 px-4 py-3">
+                            <div className="max-w-md mx-auto">
+                                <div className="flex items-center space-x-2 text-sm text-white/90 mb-1">
+                                    <Building2 className="w-4 h-4" />
+                                    <label htmlFor="myUnitInput" className="font-bold">あなたの所属:</label>
+                                </div>
+                                <div className="relative">
+                                    <input 
+                                        id="myUnitInput"
+                                        type="text"
+                                        value={myUnit} 
+                                        onChange={handleUnitChange}
+                                        placeholder="所属名を入力 (例: 本署救助隊)"
+                                        className="w-full bg-white text-slate-900 rounded px-3 py-2 text-base font-bold outline-none focus:ring-2 focus:ring-orange-400 shadow-inner"
+                                    />
+                                    <Edit3 className="absolute right-3 top-2.5 text-slate-400 w-4 h-4 pointer-events-none" />
+                                </div>
                             </div>
-                            </div>
-                            <InputField 
-                            label="生年月日" 
-                            type="date"
-                            value={person.birthDate || ''} 
-                            onChange={(val) => updatePerson(person.id, 'birthDate', val)}
-                            />
-                            <InputField 
-                            label="年齢" 
-                            type="number"
-                            placeholder="歳"
-                            value={person.age || ''} 
-                            onChange={(val) => updatePerson(person.id, 'age', val)}
-                            />
                         </div>
+                    </header>
+
+                    {/* Main Content */}
+                    <main className="max-w-md mx-auto px-4 py-6">
+                        {loading ? (
+                            <div className="flex justify-center py-10">
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-red-600"></div>
+                            </div>
+                        ) : (
+                            <>
+                                {view === 'dashboard' && (
+                                    <Dashboard 
+                                        lentByMe={lentByMe} 
+                                        borrowedByMe={borrowedByMe} 
+                                        myUnit={myUnit}
+                                        onReturn={(item) => updateStatus(item, 'returned')}
+                                    />
+                                )}
+                                {view === 'add' && (
+                                    <AddTransactionForm 
+                                        myUnit={myUnit} 
+                                        onClose={() => setView('dashboard')}
+                                    />
+                                )}
+                                {view === 'audit' && (
+                                    <MonthlyAudit 
+                                        myUnit={myUnit}
+                                        transactions={activeTransactions}
+                                    />
+                                )}
+                                {view === 'history' && (
+                                    <HistoryView 
+                                        transactions={transactions}
+                                        myUnit={myUnit}
+                                    />
+                                )}
+                            </>
+                        )}
+                    </main>
+
+                    {/* Bottom Navigation */}
+                    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 shadow-lg z-40 pb-safe">
+                        <div className="max-w-md mx-auto flex justify-around items-center h-16">
+                            <NavItem icon={<ClipboardList />} label="一覧" active={view === 'dashboard'} onClick={() => setView('dashboard')} />
+                            <NavItem icon={<PlusCircle className="text-red-600" />} label="貸出登録" active={view === 'add'} onClick={() => setView('add')} highlight />
+                            <NavItem icon={<CheckSquare />} label="月末点検" active={view === 'audit'} onClick={() => setView('audit')} />
+                            <NavItem icon={<History />} label="履歴" active={view === 'history'} onClick={() => setView('history')} />
+                        </div>
+                    </nav>
+                </div>
+            );
+        }
+
+        // --- Sub Components ---
+        
+        function Dashboard({ lentByMe, borrowedByMe, myUnit, onReturn }) {
+            if (!myUnit) {
+                return (
+                    <div className="text-center py-12 px-4 bg-white rounded-xl shadow-md border-t-4 border-red-500">
+                        <Building2 className="w-16 h-16 mx-auto text-slate-300 mb-4" />
+                        <h2 className="text-xl font-bold text-slate-800 mb-2">所属を入力してください</h2>
+                        <p className="text-slate-500 mb-4">画面上部の入力欄に、所属名を入力してください。</p>
+                        <div className="text-sm text-red-500 font-bold bg-red-50 p-2 rounded">↑ 上の赤いエリアに入力</div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="space-y-6">
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-orange-500">
+                            <p className="text-xs text-slate-500 font-bold mb-1">他部署へ貸出中</p>
+                            <p className="text-2xl font-bold text-slate-800">{lentByMe.length}<span className="text-sm font-normal text-slate-400 ml-1">件</span></p>
+                        </div>
+                        <div className="bg-white p-4 rounded-xl shadow-sm border-l-4 border-blue-500">
+                            <p className="text-xs text-slate-500 font-bold mb-1">他部署から借用中</p>
+                            <p className="text-2xl font-bold text-slate-800">{borrowedByMe.length}<span className="text-sm font-normal text-slate-400 ml-1">件</span></p>
+                        </div>
+                    </div>
+
+                    <section>
+                        <h2 className="text-sm font-bold text-slate-600 mb-3 flex items-center">
+                            <ArrowRightLeft className="w-4 h-4 mr-1 text-blue-500" />
+                            借りている物（要返却）
+                        </h2>
+                        {borrowedByMe.length === 0 ? (
+                            <EmptyState message="現在借りているものはありません" />
+                        ) : (
+                            <div className="space-y-3">
+                                {borrowedByMe.map(item => (
+                                    <TransactionCard key={item.id} item={item} type="borrowed" onAction={() => onReturn(item)} />
+                                ))}
+                            </div>
+                        )}
+                    </section>
+
+                    <section>
+                        <h2 className="text-sm font-bold text-slate-600 mb-3 flex items-center">
+                            <ArrowRightLeft className="w-4 h-4 mr-1 text-orange-500" />
+                            貸している物
+                        </h2>
+                        {lentByMe.length === 0 ? (
+                            <EmptyState message="現在貸しているものはありません" />
+                        ) : (
+                            <div className="space-y-3">
+                                {lentByMe.map(item => (
+                                    <TransactionCard key={item.id} item={item} type="lent" onAction={() => onReturn(item)} />
+                                ))}
+                            </div>
+                        )}
+                    </section>
+                </div>
+            );
+        }
+
+        function TransactionCard({ item, type, onAction }) {
+            const isLent = type === 'lent';
+            return (
+                <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-100 relative overflow-hidden group">
+                    <div className={`absolute left-0 top-0 bottom-0 w-1 ${isLent ? 'bg-orange-400' : 'bg-blue-400'}`}></div>
+                    <div className="pl-2">
+                        <div className="flex justify-between items-start mb-2">
+                            <h3 className="font-bold text-slate-800 text-lg">{item.itemName}</h3>
+                            <span className="text-xs bg-slate-100 text-slate-600 px-2 py-1 rounded">
+                                {formatDate(item.createdAt)}~
+                            </span>
+                        </div>
+                        <div className="flex items-center text-sm text-slate-600 mb-2">
+                            <span className="font-semibold mr-2 w-12 text-slate-400">{isLent ? '貸出先' : '借用元'}:</span>
+                            <span className="font-bold bg-slate-100 px-2 py-0.5 rounded text-slate-800">{isLent ? item.borrower : item.lender}</span>
+                        </div>
+                         {item.returnDate && (
+                            <div className="text-xs font-bold text-slate-600 mb-2 flex items-center bg-yellow-50 p-1.5 rounded w-fit">
+                                <CalendarIcon className="w-3 h-3 mr-1 text-orange-500" />
+                                返却予定: {item.returnDate}
+                            </div>
+                        )}
+                        {item.notes && <p className="text-xs text-slate-500 mb-3 bg-slate-50 p-2 rounded">{item.notes}</p>}
                         
-                        <InputField 
-                            label="連絡先・住所" 
-                            value={person.contact} 
-                            onChange={(val) => updatePerson(person.id, 'contact', val)}
-                        />
-                        <InputField 
-                            label="発見時の居場所" 
-                            value={person.locationAtDiscovery} 
-                            onChange={(val) => updatePerson(person.id, 'locationAtDiscovery', val)}
-                            placeholder="例：建物の南側道路上"
-                        />
-                        <TextArea 
-                            label="取った行動・証言内容" 
-                            value={person.statement}
-                            onChange={(val) => updatePerson(person.id, 'statement', val)}
-                            placeholder="詳細に記述..."
-                        />
-                        </div>
-                    ))}
-                    <button 
-                        onClick={addPerson}
-                        className="w-full py-4 border-2 border-dashed border-slate-300 text-slate-500 rounded-xl hover:bg-slate-50 hover:border-amber-400 hover:text-amber-600 transition-all duration-300 flex justify-center items-center gap-2 font-bold tracking-wide group"
-                    >
-                        <div className="bg-slate-200 rounded-full p-1 group-hover:bg-amber-100 transition-colors">
-                        <Plus size={20} /> 
-                        </div>
-                        関係者を追加
-                    </button>
-                    </div>
-                )}
-                </div>
-
-                {/* 3. Discovery Details */}
-                <div className="shadow-sm rounded-lg overflow-hidden">
-                <SectionHeader 
-                    title="発見時の状況" 
-                    icon={Flame} 
-                    sectionName="discovery" 
-                    activeSection={activeSection}
-                    setActiveSection={setActiveSection}
-                />
-                {activeSection === 'discovery' && (
-                    <div className="bg-white p-6 rounded-b-lg border-x border-b border-slate-200">
-                    <InputField 
-                        label="出火（発見）箇所" 
-                        value={currentReport.discovery.location} 
-                        onChange={(val) => updateReport('discovery', {...currentReport.discovery, location: val})}
-                        placeholder="例：1階台所付近、北東の角"
-                    />
-                    <TextArea 
-                        label="燃焼の性状・状態" 
-                        value={currentReport.discovery.state} 
-                        onChange={(val) => updateReport('discovery', {...currentReport.discovery, state: val})}
-                        placeholder="立ち昇る炎、くすぶり、爆発的など"
-                    />
-                    <div className="grid grid-cols-2 gap-6">
-                        <InputField 
-                        label="煙の色・量" 
-                        value={currentReport.discovery.smokeColor} 
-                        onChange={(val) => updateReport('discovery', {...currentReport.discovery, smokeColor: val})}
-                        placeholder="黒煙、白煙、少量など"
-                        />
-                        <InputField 
-                        label="炎の色" 
-                        value={currentReport.discovery.flameColor} 
-                        onChange={(val) => updateReport('discovery', {...currentReport.discovery, flameColor: val})}
-                        placeholder="赤、オレンジ、青白いなど"
-                        />
-                    </div>
-                    <div className="grid grid-cols-2 gap-6">
-                        <InputField 
-                        label="臭気" 
-                        value={currentReport.discovery.odor} 
-                        onChange={(val) => updateReport('discovery', {...currentReport.discovery, odor: val})}
-                        placeholder="異臭の有無"
-                        />
-                        <InputField 
-                        label="音" 
-                        value={currentReport.discovery.sound} 
-                        onChange={(val) => updateReport('discovery', {...currentReport.discovery, sound: val})}
-                        placeholder="爆発音など"
-                        />
-                    </div>
-                    <TextArea 
-                        label="開口部・施錠の状況" 
-                        value={currentReport.discovery.entryStatus} 
-                        onChange={(val) => updateReport('discovery', {...currentReport.discovery, entryStatus: val})}
-                        placeholder="玄関施錠、窓の開放状況、破壊痕"
-                    />
-                    </div>
-                )}
-                </div>
-
-                {/* 4. Timeline */}
-                <div className="shadow-sm rounded-lg overflow-hidden">
-                <SectionHeader 
-                    title="時系列記録" 
-                    icon={Clock} 
-                    sectionName="timeline" 
-                    activeSection={activeSection}
-                    setActiveSection={setActiveSection}
-                />
-                {activeSection === 'timeline' && (
-                    <div className="bg-white p-6 rounded-b-lg border-x border-b border-slate-200">
-                    <div className="relative border-l-2 border-slate-200 ml-3 space-y-8 pl-8 pb-4">
-                        {sortedTimelineForEdit.map((event) => (
-                        <div key={event.id} className="relative group">
-                            <div className="absolute -left-[39px] top-3 w-5 h-5 bg-slate-800 rounded-full border-4 border-white shadow-sm z-10"></div>
-                            <div className="flex flex-col sm:flex-row gap-3 mb-2 items-start sm:items-center relative z-20">
-                            <div className="relative">
-                                <TimeInput 
-                                    value={event.time}
-                                    onChange={(val) => updateTimelineEvent(event.id, 'time', val)}
-                                    compact={true}
-                                />
+                        <div className="flex justify-between items-center mt-3 pt-3 border-t border-slate-100">
+                             <div className="flex items-center">
+                                {item.lastAuditedAt ? (
+                                   <span className="text-xs flex items-center text-green-600">
+                                     <CheckCircle2 className="w-3 h-3 mr-1" />
+                                     {item.lastAuditedBy}確認済 ({formatDate(item.lastAuditedAt)})
+                                   </span>
+                                ) : (
+                                  <span className="text-xs flex items-center text-red-500 font-bold">
+                                    <AlertCircle className="w-3 h-3 mr-1" />
+                                    未確認
+                                  </span>
+                                )}
                             </div>
-                            <button 
-                                type="button"
-                                onClick={() => removeTimelineEvent(event.id)}
-                                className="text-slate-300 hover:text-red-500 p-1 transition-colors ml-auto sm:ml-0"
-                                title="削除"
-                            >
-                                <Trash2 size={16} />
+                            <button onClick={onAction} className={`px-4 py-2 rounded-md text-sm font-bold transition-colors ${isLent ? 'bg-orange-50 text-orange-600 hover:bg-orange-100' : 'bg-blue-600 text-white hover:bg-blue-700 shadow-md shadow-blue-200'}`}>
+                                {isLent ? '返却を確認' : '返却する'}
                             </button>
-                            </div>
-                            <textarea
-                            value={event.description}
-                            onChange={(e) => updateTimelineEvent(event.id, 'description', e.target.value)}
-                            onClick={(e) => e.stopPropagation()} 
-                            placeholder="イベント内容..."
-                            className="w-full border border-slate-200 rounded-lg p-3 text-sm bg-white focus:ring-2 focus:ring-slate-800 focus:border-transparent outline-none shadow-sm transition-all relative z-10"
-                            rows={2}
-                            />
                         </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function AddTransactionForm({ myUnit, onClose }) {
+            const [itemName, setItemName] = useState('');
+            const [targetUnit, setTargetUnit] = useState('');
+            const [notes, setNotes] = useState('');
+            const [returnDate, setReturnDate] = useState('');
+            const [type, setType] = useState('lending'); 
+            const [submitting, setSubmitting] = useState(false);
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                if (!myUnit.trim()) { alert("所属を入力してください"); return; }
+                if (!itemName.trim()) { alert("物品名を入力してください"); return; }
+                if (!targetUnit.trim()) { alert("相手の部署名を入力してください"); return; }
+                setSubmitting(true);
+                try {
+                    const lender = type === 'lending' ? myUnit : targetUnit.trim();
+                    const borrower = type === 'lending' ? targetUnit.trim() : myUnit;
+                    await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'lending_transactions'), {
+                        itemName: itemName.trim(),
+                        lender,
+                        borrower,
+                        notes: notes.trim(),
+                        returnDate: returnDate || null,
+                        status: 'active',
+                        createdAt: serverTimestamp(),
+                        lastAuditedAt: null,
+                        updatedAt: serverTimestamp()
+                    });
+                    onClose();
+                } catch (err) {
+                    console.error(err);
+                    alert("エラーが発生しました。");
+                } finally {
+                    setSubmitting(false);
+                }
+            };
+
+            return (
+                <div className="bg-white p-6 rounded-xl shadow-md animate-fade-in-up">
+                    <h2 className="text-xl font-bold text-slate-800 mb-6 flex items-center">
+                        <PlusCircle className="mr-2 text-red-600" />
+                        新規登録
+                    </h2>
+                    <div className="flex mb-6 bg-slate-100 p-1 rounded-lg">
+                        <button type="button" onClick={() => setType('lending')} className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${type === 'lending' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>貸す</button>
+                        <button type="button" onClick={() => setType('borrowing')} className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${type === 'borrowing' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>借りる</button>
+                    </div>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-1">物品名</label>
+                            <input type="text" value={itemName} onChange={(e) => setItemName(e.target.value)} className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-red-500 outline-none" placeholder="例：40mmホース" required />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-1">{type === 'lending' ? '貸出先（相手の部署名）' : '借用元（相手の部署名）'}</label>
+                            <input type="text" value={targetUnit} onChange={(e) => setTargetUnit(e.target.value)} className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-red-500 outline-none" placeholder="例：南出張所" required />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-1">返却予定日（任意）</label>
+                            <input type="date" value={returnDate} onChange={(e) => setReturnDate(e.target.value)} className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-red-500 outline-none bg-white" />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-1">備考</label>
+                            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full p-3 border border-slate-200 rounded-lg focus:ring-2 focus:ring-red-500 outline-none h-24" placeholder="備考" />
+                        </div>
+                        <div className="flex space-x-3 pt-4">
+                            <button type="button" onClick={onClose} className="flex-1 py-3 text-slate-600 font-bold bg-slate-100 rounded-lg hover:bg-slate-200">キャンセル</button>
+                            <button type="submit" disabled={submitting} className={`flex-1 py-3 text-white font-bold rounded-lg shadow-lg ${type === 'lending' ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-500 hover:bg-blue-600'}`}>{submitting ? '登録中...' : '登録する'}</button>
+                        </div>
+                    </form>
+                </div>
+            );
+        }
+
+        function MonthlyAudit({ myUnit, transactions }) {
+            if (!myUnit) return <div className="text-center py-10 text-slate-500">先に所属名を入力してください。</div>;
+            const myAuditItems = transactions.filter(t => t.lender === myUnit || t.borrower === myUnit);
+            
+            const handleAudit = async (item) => {
+                try {
+                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'lending_transactions', item.id), {
+                        lastAuditedAt: serverTimestamp(),
+                        lastAuditedBy: myUnit
+                    });
+                } catch (e) {
+                    console.error(e);
+                }
+            };
+
+            const currentMonth = new Date().getMonth() + 1;
+            const isAuditedThisMonth = (item) => {
+                if (!item.lastAuditedAt) return false;
+                const auditDate = item.lastAuditedAt.toDate();
+                const now = new Date();
+                return auditDate.getMonth() === now.getMonth() && auditDate.getFullYear() === now.getFullYear();
+            };
+            const pendingAudit = myAuditItems.filter(item => !isAuditedThisMonth(item));
+            const completedAudit = myAuditItems.filter(item => isAuditedThisMonth(item));
+
+            return (
+                <div className="space-y-6">
+                    <div className="bg-white p-4 rounded-xl border-l-4 border-indigo-500 shadow-sm">
+                        <h2 className="font-bold text-lg mb-1">{currentMonth}月の点検</h2>
+                        <p className="text-sm text-slate-600">貸借物品の所在確認を行い、チェックしてください。</p>
+                    </div>
+                    <div className="space-y-2">
+                        <h3 className="font-bold text-slate-700 flex items-center"><AlertCircle className="w-4 h-4 mr-1 text-red-500" />未確認リスト ({pendingAudit.length})</h3>
+                        {pendingAudit.length === 0 ? <div className="p-4 bg-green-50 text-green-700 rounded-lg text-sm text-center">すべての確認が完了しています！</div> : pendingAudit.map(item => (
+                            <div key={item.id} className="bg-white p-3 rounded-lg shadow-sm border border-slate-200 flex justify-between items-center">
+                                <div>
+                                    <div className="font-bold text-slate-800">{item.itemName}</div>
+                                    <div className="text-xs text-slate-500 mt-1">{item.lender === myUnit ? <span className="text-orange-600 font-semibold">貸出中 ➔ {item.borrower}</span> : <span className="text-blue-600 font-semibold">借用中 ➔ {item.lender}</span>}</div>
+                                </div>
+                                <button onClick={() => handleAudit(item)} className="bg-indigo-50 text-indigo-600 px-3 py-2 rounded font-bold text-xs border border-indigo-200 hover:bg-indigo-100">確認完了</button>
+                            </div>
                         ))}
                     </div>
-                    <button 
-                        onClick={addTimelineEvent}
-                        className="mt-6 w-full py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-bold tracking-wide transition-colors"
-                    >
-                        + 時系列イベントを追加
-                    </button>
-                    </div>
-                )}
-                </div>
-
-                {/* 5. Photos Section (NEW) */}
-                <div className="shadow-sm rounded-lg overflow-hidden">
-                <SectionHeader 
-                    title="写真記録" 
-                    icon={ImageIcon} 
-                    sectionName="photos" 
-                    activeSection={activeSection}
-                    setActiveSection={setActiveSection}
-                />
-                {activeSection === 'photos' && (
-                    <div className="bg-white p-6 rounded-b-lg border-x border-b border-slate-200">
-                        <div className="mb-4">
-                            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer bg-slate-50 hover:bg-slate-100 transition-colors">
-                                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                                    <Camera className="w-8 h-8 mb-2 text-slate-400" />
-                                    <p className="mb-2 text-sm text-slate-500 font-bold">写真を撮影 / 選択</p>
-                                    <p className="text-xs text-slate-400">自動的に軽量化して保存されます</p>
-                                </div>
-                                <input 
-                                    type="file" 
-                                    className="hidden" 
-                                    accept="image/*"
-                                    onChange={handlePhotoUpload}
-                                />
-                            </label>
-                        </div>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            {(currentReport.photos || []).map((photo) => (
-                                <div key={photo.id} className="relative group border border-slate-200 rounded-lg p-2 bg-white shadow-sm">
-                                    <img 
-                                        src={photo.data} 
-                                        alt="evidence" 
-                                        className="w-full h-48 object-cover rounded-md mb-2 bg-slate-100"
-                                    />
-                                    <input
-                                        type="text"
-                                        placeholder="写真の説明..."
-                                        value={photo.description}
-                                        onChange={(e) => updatePhoto(photo.id, e.target.value)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="w-full text-sm p-2 border border-slate-200 rounded focus:ring-2 focus:ring-slate-800 outline-none"
-                                    />
-                                    <button 
-                                        type="button"
-                                        onClick={() => removePhoto(photo.id)}
-                                        className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-full shadow-md hover:bg-red-600 transition-colors"
-                                    >
-                                        <Trash2 size={16} />
-                                    </button>
+                    {completedAudit.length > 0 && (
+                        <div className="space-y-2 pt-4 border-t border-slate-200">
+                            <h3 className="font-bold text-slate-400 text-sm flex items-center"><CheckCircle2 className="w-4 h-4 mr-1" />確認済み ({completedAudit.length})</h3>
+                            {completedAudit.map(item => (
+                                <div key={item.id} className="bg-slate-50 p-2 rounded border border-slate-100 flex justify-between items-center opacity-70">
+                                    <span className="text-sm font-medium text-slate-600 line-through">{item.itemName}</span>
+                                    <span className="text-xs text-green-600 font-bold">{formatDate(item.lastAuditedAt)} 済</span>
                                 </div>
                             ))}
                         </div>
-                        {(currentReport.photos || []).length === 0 && (
-                            <p className="text-center text-slate-400 text-sm py-4">写真はありません</p>
-                        )}
-                    </div>
-                )}
+                    )}
                 </div>
-
-                {/* 6. Free Notes */}
-                <div className="shadow-sm rounded-lg overflow-hidden">
-                <SectionHeader 
-                    title="その他メモ・特記事項" 
-                    icon={FileText} 
-                    sectionName="notes" 
-                    activeSection={activeSection}
-                    setActiveSection={setActiveSection}
-                />
-                {activeSection === 'notes' && (
-                    <div className="bg-white p-6 rounded-b-lg border-x border-b border-slate-200">
-                    <TextArea 
-                        label="自由記述欄"
-                        value={currentReport.notes}
-                        onChange={(val) => updateReport('notes', val)}
-                        rows={8}
-                        placeholder="スケッチの参照、その他気になった点など"
-                    />
-                    </div>
-                )}
-                </div>
-
-            </div>
-            </div>
-        );
-        };
-
-        const PreviewView = ({ currentReport, setView, showDialog }) => {
-        if (!currentReport) return null;
-
-        const generateTextReport = () => {
-            let text = `【火災調査報告用メモ】\n`;
-            text += `案件名: ${currentReport.basicInfo.incidentName}\n`;
-            text += `日時: ${currentReport.basicInfo.date} ${currentReport.basicInfo.time}\n`;
-            text += `場所: ${currentReport.basicInfo.location}\n`;
-            text += `気象: ${currentReport.basicInfo.weather} / ${currentReport.basicInfo.temperature}\n\n`;
-
-            text += `■ 関係者・目撃者\n`;
-            currentReport.people.forEach((p, i) => {
-            const ageStr = p.age ? ` (${p.age}歳)` : '';
-            const genderStr = p.gender ? ` / ${p.gender}` : '';
-            const birthStr = p.birthDate ? ` 生年月日:${p.birthDate}` : '';
-            text += `${i+1}. [${p.type}] ${p.name}${ageStr}${genderStr}${birthStr}\n`;
-            text += `   連絡先: ${p.contact}\n`;
-            text += `   発見位置: ${p.locationAtDiscovery}\n`;
-            text += `   証言: ${p.statement}\n`;
-            });
-            text += `\n`;
-
-            text += `■ 発見時の状況\n`;
-            text += `箇所: ${currentReport.discovery.location}\n`;
-            text += `性状: ${currentReport.discovery.state}\n`;
-            text += `煙/炎: ${currentReport.discovery.smokeColor} / ${currentReport.discovery.flameColor}\n`;
-            text += `臭気/音: ${currentReport.discovery.odor} / ${currentReport.discovery.sound}\n`;
-            text += `施錠: ${currentReport.discovery.entryStatus}\n\n`;
-
-            text += `■ 時系列\n`;
-            const sortedTimeline = [...currentReport.timeline].sort((a, b) => {
-            if (!a.time && !b.time) return 0;
-            if (!a.time) return 1;
-            if (!b.time) return -1;
-            return a.time.localeCompare(b.time);
-            });
-            sortedTimeline.forEach(t => {
-            const timeStr = t.time ? t.time : '(時刻未定)';
-            text += `${timeStr} : ${t.description}\n`;
-            });
-            text += `\n`;
-
-            text += `■ 写真記録\n`;
-            const photos = currentReport.photos || [];
-            if(photos.length > 0) {
-                photos.forEach((p, i) => {
-                    text += `写真${i+1}: ${p.description}\n`;
-                });
-            } else {
-                text += `(写真なし)\n`;
-            }
-            text += `\n`;
-
-            text += `■ その他\n${currentReport.notes}\n`;
-            return text;
-        };
-
-        const copyToClipboard = () => {
-            const text = generateTextReport();
-            const textArea = document.createElement("textarea");
-            textArea.value = text;
-            document.body.appendChild(textArea);
-            textArea.select();
-            try {
-            document.execCommand('copy');
-            showDialog('成功', 'クリップボードにコピーしました');
-            } catch (err) {
-            showDialog('エラー', 'コピーに失敗しました。手動でコピーしてください。', 'error');
-            }
-            document.body.removeChild(textArea);
-        };
-
-        const downloadTextFile = () => {
-            const text = generateTextReport();
-            const blob = new Blob([text], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            const dateStr = currentReport.basicInfo.date || 'nodate';
-            const nameStr = currentReport.basicInfo.incidentName || 'report';
-            a.download = `${dateStr}_${nameStr}.txt`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        };
-
-        const handlePrint = () => {
-            window.print();
-        };
-
-        return (
-            <div className="bg-zinc-100 min-h-screen p-4 flex flex-col items-center print:bg-white print:p-0">
-            
-            <div className="no-print bg-white border-b border-slate-200 w-full max-w-3xl mb-6 p-4 rounded-xl shadow-md flex justify-between items-center">
-                <button onClick={() => setView('list')} className="text-slate-500 hover:text-slate-800 hover:bg-slate-100 p-2 rounded-full transition-colors">
-                <ArrowLeft size={22} />
-                </button>
-                <h2 className="font-bold text-slate-800 tracking-wide">OUTPUT PREVIEW</h2>
-                <button onClick={() => { setView('edit'); }} className="text-slate-600 font-bold hover:bg-slate-100 px-4 py-2 rounded-lg transition-colors">
-                編集に戻る
-                </button>
-            </div>
-
-            <div className="print-content bg-white w-full max-w-3xl p-8 rounded-xl shadow-2xl mb-6 text-sm md:text-base font-mono whitespace-pre-wrap leading-relaxed border border-slate-100">
-                {/* テキストレポート部分 */}
-                <div className="mb-8 border-b border-slate-100 pb-8">
-                    {generateTextReport()}
-                </div>
-
-                {/* 写真プレビュー部分 (印刷用) */}
-                {(currentReport.photos || []).length > 0 && (
-                    <div className="mt-4">
-                        <h3 className="font-bold text-lg mb-4 border-l-4 border-slate-800 pl-3">写真資料</h3>
-                        <div className="grid grid-cols-2 gap-4">
-                            {currentReport.photos.map((photo, i) => (
-                                <div key={photo.id} className="page-break-inside-avoid border border-slate-200 p-2 rounded">
-                                    <img src={photo.data} alt={`写真${i+1}`} className="w-full h-auto object-contain mb-2 max-h-64" />
-                                    <p className="text-xs font-bold text-center">写真{i+1}: {photo.description}</p>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            <div className="no-print flex flex-col md:flex-row gap-4 w-full max-w-3xl mb-10">
-                <button 
-                onClick={copyToClipboard}
-                className="flex-1 bg-white border border-slate-300 text-slate-700 py-4 rounded-lg shadow-sm hover:bg-slate-50 flex justify-center items-center gap-2 font-bold transition-all"
-                >
-                <Copy size={20} /> コピー
-                </button>
-                <button 
-                onClick={downloadTextFile}
-                className="flex-1 bg-slate-800 text-white py-4 rounded-lg shadow-lg hover:bg-slate-900 flex justify-center items-center gap-2 font-bold transition-all"
-                >
-                <Download size={20} className="text-amber-400" /> テキスト保存
-                </button>
-                <button 
-                onClick={handlePrint}
-                className="flex-1 bg-amber-500 text-white py-4 rounded-lg shadow-lg hover:bg-amber-600 flex justify-center items-center gap-2 font-bold transition-all"
-                >
-                <Printer size={20} /> 印刷 / PDF
-                </button>
-            </div>
-            </div>
-        );
-        };
-
-        // ---------------- Main Component ----------------
-
-        const FireInvestigationApp = () => {
-        const [view, setView] = useState('list');
-        const [reports, setReports] = useState([]);
-        const [currentReport, setCurrentReport] = useState(null);
-        const [activeSection, setActiveSection] = useState('basic');
-        const [modal, setModal] = useState({
-            isOpen: false, title: '', message: '', type: 'info', onConfirm: null
-        });
-
-        useEffect(() => {
-            const savedReports = localStorage.getItem('fireInvestigationReports');
-            if (savedReports) {
-            setReports(JSON.parse(savedReports));
-            }
-        }, []);
-
-        useEffect(() => {
-            localStorage.setItem('fireInvestigationReports', JSON.stringify(reports));
-        }, [reports]);
-
-        const openDialog = (title, message, type = 'info') => {
-            setModal({ isOpen: true, title, message, type, onConfirm: null });
-        };
-
-        const openConfirm = (title, message, onConfirm) => {
-            setModal({ isOpen: true, title, message, type: 'confirm', onConfirm });
-        };
-
-        const closeModal = () => {
-            setModal(prev => ({ ...prev, isOpen: false }));
-        };
-
-        const createNewReport = () => {
-            const newReport = {
-            id: Date.now().toString(),
-            createdAt: new Date().toISOString(),
-            basicInfo: { incidentName: '', date: '', time: '', location: '', weather: '', temperature: '' },
-            people: [],
-            discovery: { location: '', state: '', smokeColor: '', flameColor: '', odor: '', sound: '', entryStatus: '' },
-            timeline: [],
-            photos: [], // 写真配列を追加
-            notes: ''
-            };
-            setCurrentReport(newReport);
-            setView('edit');
-            setActiveSection('basic');
-        };
-
-        const updateReport = (section, data) => {
-            setCurrentReport(prev => ({ ...prev, [section]: data }));
-        };
-
-        const saveCurrentReport = () => {
-            try {
-                setReports(prev => {
-                    const existingIndex = prev.findIndex(r => r.id === currentReport.id);
-                    if (existingIndex >= 0) {
-                        const updated = [...prev];
-                        updated[existingIndex] = currentReport;
-                        return updated;
-                    } else {
-                        return [currentReport, ...prev];
-                    }
-                });
-                openDialog('保存完了', '調査記録を保存しました。');
-            } catch (e) {
-                // 容量オーバー時のエラーハンドリング
-                if (e.name === 'QuotaExceededError') {
-                    openDialog('保存エラー', '保存容量の上限に達しました。不要なレポートを削除するか、写真を減らしてください。', 'error');
-                } else {
-                    openDialog('保存エラー', '保存中にエラーが発生しました。', 'error');
-                }
-            }
-        };
-
-        const deleteReport = (id) => {
-            openConfirm(
-            '削除の確認',
-            'この調査記録を削除してもよろしいですか？この操作は取り消せません。',
-            () => {
-                setReports(prev => prev.filter(r => r.id !== id));
-                if (currentReport && currentReport.id === id) {
-                setCurrentReport(null);
-                }
-                setView('list');
-            }
             );
-        };
+        }
 
-        const addPerson = () => {
-            const newPerson = {
-            id: Date.now(), type: '第一発見者', name: '', birthDate: '', age: '', gender: '',
-            contact: '', locationAtDiscovery: '', action: '', statement: ''
-            };
-            setCurrentReport(prev => ({ ...prev, people: [...prev.people, newPerson] }));
-        };
+        function HistoryView({ transactions, myUnit }) {
+            if (!myUnit) return <div className="text-center py-10 text-slate-500">先に所属名を入力してください。</div>;
+            const history = transactions.filter(t => t.status === 'returned' && (t.lender === myUnit || t.borrower === myUnit));
+            return (
+                <div className="space-y-4">
+                    <h2 className="font-bold text-lg text-slate-700">過去の履歴（返却済）</h2>
+                    {history.length === 0 ? <EmptyState message="履歴はありません" /> : history.map(item => (
+                        <div key={item.id} className="bg-white p-3 rounded-lg shadow-sm border border-slate-100">
+                            <div className="flex justify-between"><span className="font-bold text-slate-700">{item.itemName}</span><span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded">返却済</span></div>
+                            <div className="text-xs text-slate-500 mt-1 flex gap-2"><span>貸: {item.lender}</span><span>↔</span><span>借: {item.borrower}</span></div>
+                            <div className="text-xs text-slate-400 mt-1 text-right">{formatDate(item.createdAt)} 〜 {formatDate(item.updatedAt)}</div>
+                        </div>
+                    ))}
+                </div>
+            );
+        }
 
-        const updatePerson = (id, field, value) => {
-            setCurrentReport(prev => ({ ...prev, people: prev.people.map(p => p.id === id ? { ...p, [field]: value } : p) }));
-        };
+        function NavItem({ icon, label, active, onClick, highlight }) {
+            return (
+                <button onClick={onClick} className={`flex flex-col items-center justify-center w-full h-full transition-colors relative ${active ? 'text-red-600' : 'text-slate-400 hover:text-slate-600'}`}>
+                    {highlight && <div className="absolute -top-5 bg-red-600 text-white rounded-full p-3 shadow-lg border-4 border-slate-50 transform hover:scale-110 transition-transform"><PlusCircle className="w-6 h-6 text-white" /></div>}
+                    <div className={`${highlight ? 'opacity-0 h-6' : ''}`}>{React.isValidElement(icon) ? React.cloneElement(icon, { size: 24, strokeWidth: active ? 2.5 : 2 }) : null}</div>
+                    <span className={`text-[10px] font-bold mt-1 ${highlight ? 'mt-7' : ''}`}>{label}</span>
+                </button>
+            );
+        }
 
-        const removePerson = (id) => {
-            setCurrentReport(prev => ({ ...prev, people: prev.people.filter(p => p.id !== id) }));
-        };
+        function EmptyState({ message }) {
+            return (
+                <div className="text-center py-10 bg-slate-100 rounded-lg border-2 border-dashed border-slate-200">
+                    <ClipboardList className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                    <p className="text-sm text-slate-400 font-bold">{message}</p>
+                </div>
+            );
+        }
 
-        const addTimelineEvent = () => {
-            const newEvent = { id: Date.now(), time: '', description: '' };
-            setCurrentReport(prev => ({ ...prev, timeline: [...prev.timeline, newEvent] }));
-        };
-
-        const updateTimelineEvent = (id, field, value) => {
-            setCurrentReport(prev => ({ ...prev, timeline: prev.timeline.map(t => t.id === id ? { ...t, [field]: value } : t) }));
-        };
-
-        const removeTimelineEvent = (id) => {
-            setCurrentReport(prev => ({ ...prev, timeline: prev.timeline.filter(t => t.id !== id) }));
-        };
-
-        // 写真関連のハンドラ
-        const addPhoto = (dataUrl) => {
-            const newPhoto = { id: Date.now(), data: dataUrl, description: '' };
-            setCurrentReport(prev => ({ ...prev, photos: [...(prev.photos || []), newPhoto] }));
-        };
-
-        const removePhoto = (id) => {
-            setCurrentReport(prev => ({ ...prev, photos: prev.photos.filter(p => p.id !== id) }));
-        };
-
-        const updatePhoto = (id, description) => {
-            setCurrentReport(prev => ({ ...prev, photos: prev.photos.map(p => p.id === id ? { ...p, description } : p) }));
-        };
-
-        return (
-            <div className="min-h-screen bg-zinc-100 font-sans text-slate-900 selection:bg-amber-200 selection:text-slate-900">
-            <CustomModal 
-                isOpen={modal.isOpen} onClose={closeModal} title={modal.title} 
-                message={modal.message} type={modal.type} onConfirm={modal.onConfirm}
-            />
-
-            {view === 'list' && (
-                <ListView 
-                reports={reports} createNewReport={createNewReport} setCurrentReport={setCurrentReport} 
-                setView={setView} deleteReport={deleteReport} 
-                />
-            )}
-            {view === 'edit' && (
-                <EditView 
-                currentReport={currentReport} setView={setView} saveCurrentReport={saveCurrentReport} 
-                deleteReport={deleteReport} activeSection={activeSection} setActiveSection={setActiveSection} 
-                updateReport={updateReport} addPerson={addPerson} updatePerson={updatePerson} 
-                removePerson={removePerson} addTimelineEvent={addTimelineEvent} 
-                updateTimelineEvent={updateTimelineEvent} removeTimelineEvent={removeTimelineEvent}
-                addPhoto={addPhoto} removePhoto={removePhoto} updatePhoto={updatePhoto}
-                />
-            )}
-            {view === 'preview' && (
-                <PreviewView 
-                currentReport={currentReport} setView={setView} showDialog={openDialog}
-                />
-            )}
-            </div>
-        );
-        };
-
-        const root = createRoot(document.getElementById('root'));
-        root.render(<FireInvestigationApp />);
+        // ==========================================
+        //  レンダリング
+        // ==========================================
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
