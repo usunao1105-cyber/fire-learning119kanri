@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ヨガスタジオ テルテル | 愛知県幸田町の初心者歓迎アットホームヨガ</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic:wght@400;500;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Zen Maru Gothic"', 'sans-serif'],
+                    },
+                    colors: {
+                        pink: {
+                            50: '#fdf2f8',
+                            100: '#fce7f3',
+                            200: '#fbcfe8',
+                            300: '#f9a8d4',
+                            400: '#f472b6',
+                            500: '#ec4899',
+                            600: '#db2777',
+                            700: '#be185d',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Zen Maru Gothic', sans-serif;
+            color: #4a4a4a;
+        }
+        .smooth-scroll {
+            scroll-behavior: smooth;
+        }
+        /* ふんわり浮き上がるアニメーション用 */
+        .fade-in-up {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+        }
+        .fade-in-up.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body class="bg-pink-50 smooth-scroll">
+
+    <!-- ナビゲーションバー -->
+    <header class="fixed w-full bg-white/90 backdrop-blur-sm shadow-sm z-50">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between items-center h-16">
+                <div class="flex-shrink-0 flex items-center">
+                    <a href="#" class="text-2xl font-bold text-pink-600 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-pink-500"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path d="M7 16.5c-1-1.5-1.5-3.5-1.5-5.5a6.5 6.5 0 0 1 13 0c0 2-.5 4-1.5 5.5"/><path d="M12 16.5V22"/></svg>
+                        テルテル
+                    </a>
+                </div>
+                <!-- デスクトップメニュー -->
+                <nav class="hidden md:flex space-x-8">
+                    <a href="#about" class="text-gray-600 hover:text-pink-600 transition">特徴</a>
+                    <a href="#menu" class="text-gray-600 hover:text-pink-600 transition">レッスン・料金</a>
+                    <a href="#access" class="text-gray-600 hover:text-pink-600 transition">アクセス</a>
+                </nav>
+                <div class="hidden md:flex">
+                    <a href="#contact" class="bg-pink-500 text-white px-5 py-2 rounded-full hover:bg-pink-600 transition shadow-md font-medium">ご予約・お問い合わせ</a>
+                </div>
+                <!-- モバイルメニューボタン -->
+                <div class="md:hidden flex items-center">
+                    <button id="mobile-menu-btn" class="text-gray-600 hover:text-pink-600 focus:outline-none">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- モバイルメニュー -->
+        <div id="mobile-menu" class="hidden md:hidden bg-white border-t border-pink-100">
+            <div class="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+                <a href="#about" class="block px-3 py-2 text-base font-medium text-gray-700 hover:text-pink-600 hover:bg-pink-50 rounded-md">特徴</a>
+                <a href="#menu" class="block px-3 py-2 text-base font-medium text-gray-700 hover:text-pink-600 hover:bg-pink-50 rounded-md">レッスン・料金</a>
+                <a href="#access" class="block px-3 py-2 text-base font-medium text-gray-700 hover:text-pink-600 hover:bg-pink-50 rounded-md">アクセス</a>
+                <a href="#contact" class="block px-3 py-2 mt-4 text-base font-medium text-center text-white bg-pink-500 rounded-full hover:bg-pink-600">ご予約・お問い合わせ</a>
+            </div>
+        </div>
+    </header>
+
+    <!-- ヒーローセクション -->
+    <section class="pt-24 pb-12 md:pt-32 md:pb-20 px-4 relative overflow-hidden">
+        <!-- 背景装飾 -->
+        <div class="absolute top-[-10%] right-[-5%] w-64 h-64 bg-pink-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50 z-0"></div>
+        <div class="absolute bottom-[-10%] left-[-5%] w-72 h-72 bg-pink-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 z-0"></div>
+
+        <div class="max-w-6xl mx-auto flex flex-col md:flex-row items-center relative z-10 gap-8 md:gap-12">
+            <div class="w-full md:w-1/2 text-center md:text-left pt-8 md:pt-0">
+                <span class="inline-block py-1 px-3 rounded-full bg-pink-100 text-pink-600 font-medium text-sm mb-4">愛知県幸田町の小さなヨガスタジオ</span>
+                <h1 class="text-3xl md:text-4xl lg:text-5xl font-bold leading-tight mb-6 text-gray-800">
+                    そのままの服装で、<br>
+                    ふらっと立ち寄れる。<br>
+                    <span class="text-pink-500">心と体をほぐす時間</span>
+                </h1>
+                <p class="text-gray-600 mb-8 text-lg leading-relaxed">
+                    ヨガウェアは必要ありません。<br class="hidden md:block">
+                    初心者の方も大歓迎！周りを気にせずリラックスできる、<br class="hidden lg:block">
+                    アットホームな空間で、あなただけのヨガを見つけませんか？
+                </p>
+                <div class="flex flex-col sm:flex-row gap-4 justify-center md:justify-start">
+                    <a href="#contact" class="bg-pink-500 text-white px-8 py-3 rounded-full hover:bg-pink-600 transition shadow-lg text-lg font-medium text-center hover:-translate-y-1 transform duration-200">体験レッスンを予約する</a>
+                    <a href="#about" class="bg-white text-pink-600 border border-pink-200 px-8 py-3 rounded-full hover:bg-pink-50 transition shadow text-lg font-medium text-center">スタジオについて</a>
+                </div>
+            </div>
+            <div class="w-full md:w-1/2 relative">
+                <!-- メイン画像 -->
+                <div class="rounded-2xl overflow-hidden shadow-2xl relative z-10 border-4 border-white">
+                    <img src="https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80" alt="リラックスしてヨガをする様子" class="w-full h-[300px] md:h-[450px] object-cover">
+                </div>
+                <!-- 画像の装飾枠 -->
+                <div class="absolute -bottom-4 -right-4 w-full h-full border-4 border-pink-300 rounded-2xl z-0 hidden md:block"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- スタジオの特徴 -->
+    <section id="about" class="py-16 md:py-24 bg-white">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16 fade-in-up">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">テルテル 3つの特徴</h2>
+                <div class="w-16 h-1 bg-pink-400 mx-auto rounded-full"></div>
+                <p class="mt-4 text-gray-600">初めての方でも安心して通える理由があります。</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-10">
+                <!-- 特徴1 -->
+                <div class="bg-pink-50 p-8 rounded-2xl text-center shadow-sm hover:shadow-md transition duration-300 border border-pink-100 fade-in-up">
+                    <div class="w-16 h-16 mx-auto bg-white rounded-full flex items-center justify-center shadow-sm mb-6 text-pink-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-3">ヨガ初心者さん大歓迎！</h3>
+                    <p class="text-gray-600 text-left">
+                        「体が硬いから…」「運動が苦手だから…」そんな心配は無用です。現在通われている方の多くが未経験からのスタート。あなたのペースに合わせて丁寧にサポートします。
+                    </p>
+                </div>
+                <!-- 特徴2 -->
+                <div class="bg-pink-50 p-8 rounded-2xl text-center shadow-sm hover:shadow-md transition duration-300 border border-pink-100 fade-in-up" style="transition-delay: 100ms;">
+                    <div class="w-16 h-16 mx-auto bg-white rounded-full flex items-center justify-center shadow-sm mb-6 text-pink-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.38 3.46 16 2a8 8 0 0 1-8 8 8 8 0 0 1-8-8l-4.38 1.46A2 2 0 0 0 -2 5.35v12.3a2 2 0 0 0 1.38 1.9l4.62 1.54V21a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-1.9l4.62-1.54A2 2 0 0 0 22 17.65V5.35a2 2 0 0 0-1.62-1.89z" transform="translate(1, 1) scale(0.9)"/><path d="M8 10v10"/><path d="M16 10v10"/></svg>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-3">ヨガウェアは不要です</h3>
+                    <p class="text-gray-600 text-left">
+                        ピタッとした専用のウェアを用意する必要はありません。Tシャツやジャージなど、ご自身がリラックスして動きやすい服装であれば何でもOK。手ぶら感覚でお越しください。
+                    </p>
+                </div>
+                <!-- 特徴3 -->
+                <div class="bg-pink-50 p-8 rounded-2xl text-center shadow-sm hover:shadow-md transition duration-300 border border-pink-100 fade-in-up" style="transition-delay: 200ms;">
+                    <div class="w-16 h-16 mx-auto bg-white rounded-full flex items-center justify-center shadow-sm mb-6 text-pink-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-3">あなただけの個人レッスン</h3>
+                    <p class="text-gray-600 text-left">
+                        グループレッスンだけでなく、お一人おひとりの身体の悩みや目的に合わせた「個人レッスン」や「プライベートプログラム」も可能です。気兼ねなくご相談ください。
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- こんな方におすすめ -->
+    <section class="py-16 md:py-24 bg-pink-100">
+        <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="bg-white rounded-3xl p-8 md:p-12 shadow-lg border-2 border-pink-200 relative fade-in-up">
+                <!-- 装飾ピン -->
+                <div class="absolute -top-4 left-1/2 transform -translate-x-1/2 w-8 h-8 bg-pink-400 rounded-full border-4 border-white shadow"></div>
+                
+                <h2 class="text-2xl md:text-3xl font-bold text-center text-gray-800 mb-8">こんな方にぴったりなスタジオです</h2>
+                <ul class="space-y-4 text-lg text-gray-700">
+                    <li class="flex items-start">
+                        <svg class="h-6 w-6 text-pink-500 mr-3 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span>体が硬くて、周りの人の目が気になってしまう方</span>
+                    </li>
+                    <li class="flex items-start">
+                        <svg class="h-6 w-6 text-pink-500 mr-3 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span>運動不足を解消したいけれど、激しい運動は苦手な方</span>
+                    </li>
+                    <li class="flex items-start">
+                        <svg class="h-6 w-6 text-pink-500 mr-3 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span>大人数のキラキラしたスタジオは少し緊張してしまう方</span>
+                    </li>
+                    <li class="flex items-start">
+                        <svg class="h-6 w-6 text-pink-500 mr-3 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                        </svg>
+                        <span>家事や仕事の合間に、ホッと一息つける自分の時間が欲しい方</span>
+                    </li>
+                </ul>
+                <div class="mt-8 text-center">
+                    <p class="text-pink-600 font-bold text-xl">テルテルは、そんなあなたのための「心地よい居場所」を目指しています。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- レッスン・料金 -->
+    <section id="menu" class="py-16 md:py-24 bg-white">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16 fade-in-up">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">レッスン・料金</h2>
+                <div class="w-16 h-1 bg-pink-400 mx-auto rounded-full"></div>
+                <p class="mt-4 text-gray-600">無理なく続けられる、シンプルな料金設定です。</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
+                <!-- 少人数レッスン -->
+                <div class="border-2 border-pink-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-lg transition fade-in-up">
+                    <div class="bg-pink-50 py-4 px-6 border-b border-pink-100">
+                        <h3 class="text-xl font-bold text-center text-pink-700">アットホーム・クラス</h3>
+                        <p class="text-center text-sm text-pink-600 mt-1">少人数制の基本レッスン</p>
+                    </div>
+                    <div class="p-8 bg-white">
+                        <div class="text-center mb-6">
+                            <span class="text-3xl font-bold text-gray-800">¥1,500</span>
+                            <span class="text-gray-500"> / 1回 (60分)</span>
+                            <!-- ※料金は仮です。必要に応じて変更してください -->
+                        </div>
+                        <ul class="space-y-3 text-gray-600 mb-8 text-sm">
+                            <li class="flex items-center"><span class="text-pink-400 mr-2">●</span>定員数名の少人数制でアットホーム</li>
+                            <li class="flex items-center"><span class="text-pink-400 mr-2">●</span>基本的なポーズを中心にゆっくり進行</li>
+                            <li class="flex items-center"><span class="text-pink-400 mr-2">●</span>お友達同士でのご参加も大歓迎</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- 個人レッスン -->
+                <div class="border-2 border-pink-400 rounded-2xl overflow-hidden shadow-md relative fade-in-up" style="transition-delay: 100ms;">
+                    <!-- おすすめバッジ -->
+                    <div class="absolute top-0 right-0 bg-pink-500 text-white text-xs font-bold px-3 py-1 rounded-bl-lg">おすすめ</div>
+                    
+                    <div class="bg-pink-100 py-4 px-6 border-b border-pink-200">
+                        <h3 class="text-xl font-bold text-center text-pink-700">パーソナル・ヨガ</h3>
+                        <p class="text-center text-sm text-pink-600 mt-1">あなただけの個人レッスン</p>
+                    </div>
+                    <div class="p-8 bg-white">
+                        <div class="text-center mb-6">
+                            <span class="text-3xl font-bold text-gray-800">¥3,000</span>
+                            <span class="text-gray-500"> / 1回 (60分)</span>
+                            <!-- ※料金は仮です。必要に応じて変更してください -->
+                        </div>
+                        <ul class="space-y-3 text-gray-600 mb-8 text-sm">
+                            <li class="flex items-center"><span class="text-pink-400 mr-2">●</span>マンツーマンで周りの目が気にならない</li>
+                            <li class="flex items-center"><span class="text-pink-400 mr-2">●</span>肩こり、腰痛など個別の悩みに対応</li>
+                            <li class="flex items-center"><span class="text-pink-400 mr-2">●</span>ご希望の日時に合わせやすい柔軟な予約</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-12 text-center bg-pink-50 p-6 rounded-xl border border-pink-100 max-w-2xl mx-auto fade-in-up">
+                <h4 class="font-bold text-pink-600 mb-2">🔰 初回体験レッスン</h4>
+                <p class="text-gray-700">まずは雰囲気を知っていただくために、体験レッスンをご用意しています。<br>お一人様 <span class="font-bold text-xl text-pink-500">¥1,000</span> (マットレンタル無料)</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- アクセス -->
+    <section id="access" class="py-16 md:py-24 bg-pink-50">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="text-center mb-16 fade-in-up">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">アクセス</h2>
+                <div class="w-16 h-1 bg-pink-400 mx-auto rounded-full"></div>
+                <p class="mt-4 text-gray-600">愛知県幸田町の静かな場所にあります。</p>
+            </div>
+
+            <div class="flex flex-col md:flex-row gap-8 bg-white rounded-2xl p-6 md:p-8 shadow-sm border border-pink-100 fade-in-up">
+                <div class="w-full md:w-1/3 space-y-6">
+                    <div>
+                        <h3 class="font-bold text-lg text-gray-800 border-b-2 border-pink-200 pb-2 mb-3">スタジオ名</h3>
+                        <p class="text-gray-600">ヨガスタジオ テルテル</p>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-lg text-gray-800 border-b-2 border-pink-200 pb-2 mb-3">住所</h3>
+                        <p class="text-gray-600">〒444-01xx<br>愛知県額田郡幸田町〇〇<br><span class="text-sm text-gray-500">※自宅スタジオのため、詳細な住所はご予約時にお伝えいたします。</span></p>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-lg text-gray-800 border-b-2 border-pink-200 pb-2 mb-3">駐車場</h3>
+                        <p class="text-gray-600">敷地内に駐車場あり（○台）</p>
+                    </div>
+                </div>
+                <div class="w-full md:w-2/3 bg-gray-200 rounded-xl overflow-hidden min-h-[300px] flex items-center justify-center relative">
+                    <!-- Google Map埋め込み用のプレースホルダー -->
+                    <div class="absolute inset-0 bg-pink-100 flex flex-col items-center justify-center text-pink-600">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mb-2"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                        <p class="font-medium">Googleマップを表示<br><span class="text-sm">（実際のマップコードをここに埋め込みます）</span></p>
+                    </div>
+                    <!-- 実際にはここに iframeタグを入れます -->
+                    <!-- <iframe src="https://www.google.com/maps/embed?pb=..." width="100%" height="100%" style="border:0;" allowfullscreen="" loading="lazy"></iframe> -->
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- お問い合わせ・ご予約 -->
+    <section id="contact" class="py-16 md:py-24 bg-white relative">
+        <div class="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
+            <div class="bg-pink-500 rounded-3xl p-8 md:p-12 text-center text-white shadow-xl fade-in-up">
+                <h2 class="text-3xl font-bold mb-4">お問い合わせ・ご予約</h2>
+                <p class="mb-8 opacity-90">ご質問だけでも大歓迎です。お気軽にご連絡ください。<br>個人レッスンのご相談もお待ちしております。</p>
+
+                <div class="flex flex-col sm:flex-row gap-4 justify-center">
+                    <!-- LINEボタン（推奨：一番手軽に連絡できるため） -->
+                    <a href="#" class="bg-[#06C755] hover:bg-[#05b34c] text-white py-4 px-8 rounded-full font-bold text-lg flex items-center justify-center gap-2 transition shadow-md">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M24 10.304c0-5.369-5.383-9.738-12-9.738-6.616 0-12 4.369-12 9.738 0 4.814 3.55 8.892 8.448 9.589.65.158 1.543.486 1.77 1.341.204.776-.067 1.94-.216 2.65-.18.847-.864 3.42 2.822 1.83 3.684-1.589 9.873-5.836 10.96-9.584C23.905 14.524 24 12.518 24 10.304z"/></svg>
+                        LINEで予約・相談する
+                    </a>
+                    
+                    <!-- 電話ボタン（スマホからタップでかけられるように） -->
+                    <a href="tel:000-000-0000" class="bg-white text-pink-600 hover:bg-pink-50 py-4 px-8 rounded-full font-bold text-lg flex items-center justify-center gap-2 transition shadow-md">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></svg>
+                        000-000-0000
+                    </a>
+                </div>
+                <p class="mt-4 text-sm opacity-80">※レッスン中は電話に出られない場合がございます。<br>LINEからのご連絡が確実です。</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- フッター -->
+    <footer class="bg-gray-50 pt-12 pb-8 border-t border-gray-200">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-6">
+            <div class="text-center md:text-left">
+                <a href="#" class="text-2xl font-bold text-pink-600 flex items-center justify-center md:justify-start gap-2 mb-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-pink-500"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 8a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path d="M7 16.5c-1-1.5-1.5-3.5-1.5-5.5a6.5 6.5 0 0 1 13 0c0 2-.5 4-1.5 5.5"/><path d="M12 16.5V22"/></svg>
+                    テルテル
+                </a>
+                <p class="text-gray-500 text-sm">愛知県幸田町のアットホームなヨガスタジオ</p>
+            </div>
+            
+            <!-- 個人インスタグラムへのリンク（任意） -->
+            <div class="flex gap-4">
+                <a href="#" class="text-gray-400 hover:text-pink-500 transition" aria-label="Instagram">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="20" x="2" y="2" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" x2="17.51" y1="6.5" y2="6.5"/></svg>
+                </a>
+            </div>
+        </div>
+        <div class="max-w-6xl mx-auto px-4 mt-8 pt-8 border-t border-gray-200 text-center text-gray-400 text-sm">
+            &copy; 2026 Yoga Studio TeruTeru. All rights reserved.
+        </div>
+    </footer>
+
+    <script>
+        // モバイルメニューの開閉
+        const btn = document.getElementById('mobile-menu-btn');
+        const menu = document.getElementById('mobile-menu');
+
+        btn.addEventListener('click', () => {
+            menu.classList.toggle('hidden');
+        });
+
+        // メニューのリンクをクリックしたらメニューを閉じる
+        const mobileLinks = menu.querySelectorAll('a');
+        mobileLinks.forEach(link => {
+            link.addEventListener('click', () => {
+                menu.classList.add('hidden');
+            });
+        });
+
+        // スクロール時のふわっと表示アニメーション
+        const observerOptions = {
+            root: null,
+            rootMargin: '0px',
+            threshold: 0.1
+        };
+
+        const observer = new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                    observer.unobserve(entry.target); // 一度表示されたら監視を解除
+                }
+            });
+        }, observerOptions);
+
+        document.querySelectorAll('.fade-in-up').forEach(element => {
+            observer.observe(element);
+        });
+    </script>
+</body>
+</html>
