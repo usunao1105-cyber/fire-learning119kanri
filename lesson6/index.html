@@ -17,7 +17,7 @@
 
   <style>
     /* 地図の高さ調整 */
-    #map { height: 100%; width: 100%; z-index: 10; }
+    #map { z-index: 10; }
     /* チャットエリアのスクロールバーを隠す */
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
@@ -149,8 +149,8 @@
   <div id="map-chat-screen" class="flex-1 flex flex-col md:flex-row hidden relative h-full">
     
     <!-- マップエリア -->
-    <div class="flex-1 relative h-full">
-      <div id="map" class="h-full w-full z-10"></div>
+    <div class="h-[60%] md:flex-1 md:h-full relative">
+      <div id="map" class="absolute inset-0 z-10"></div>
       
       <!-- 本部用ツールボタン群 -->
       <div id="hq-tools" class="absolute top-2 right-2 z-[400] flex flex-col space-y-2 hidden">
@@ -194,7 +194,7 @@
     </div>
 
     <!-- チャットエリア -->
-    <div class="h-1/3 md:h-full md:w-80 bg-white flex flex-col border-t md:border-t-0 md:border-l border-gray-300 z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] md:shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.1)]">
+    <div class="h-[40%] md:h-full md:w-80 bg-white flex flex-col border-t md:border-t-0 md:border-l border-gray-300 z-20 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] md:shadow-[-4px_0_6px_-1px_rgba(0,0,0,0.1)]">
       
       <!-- チャットヘッダー -->
       <div class="bg-orange-50 p-2 font-bold text-orange-800 flex justify-between items-center border-b border-orange-100 text-sm">
