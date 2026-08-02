@@ -120,7 +120,7 @@
     </div>
     <div class="card">
       <div class="lesson-title">Lesson 7</div>
-      <div class="lesson-desc">公務員コンプライアンス</div>
+      <div class="lesson-desc">消防指令センター按分シミュレーター</div>
       <a href="lesson7/index.html" class="button">▶ 学習する</a>
     </div>
     <div class="card">
