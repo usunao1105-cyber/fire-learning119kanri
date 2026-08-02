@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>消防指令センター 経費按分シミュレーター (統合版)</title>
+    <!-- React & Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js (統合シミュレーター用) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', 'Noto Sans JP', sans-serif;
+            background-color: #f3f4f6;
+        }
+        /* 標準スクロールバー */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* 統合シミュレーター用 カスタムスクロールバー */
+        .custom-scrollbar::-webkit-scrollbar { height: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        input[type="number"]::-webkit-inner-spin-button, 
+        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+
+        /* 印刷・PDF出力用のスタイル */
+        @media print {
+            body { background-color: white !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .min-h-screen { min-height: auto !important; padding: 0 !important; }
+            .shadow-sm, .shadow-inner { box-shadow: none !important; border-color: #e5e7eb !important; }
+            .print-hide { display: none !important; }
+            input[type="number"], input[type="text"] { border: 1px solid transparent !important; background: transparent !important; padding-left: 0 !important; }
+            select { border: 1px solid transparent !important; appearance: none !important; background: transparent !important; padding-left: 0 !important; }
+            .page-break-inside-avoid { break-inside: avoid; }
+            h2, h3 { page-break-after: avoid; }
+            table { page-break-inside: auto; }
+            tr { page-break-inside: avoid; page-break-after: auto; }
+            thead { display: table-header-group; }
+            tfoot { display: table-footer-group; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useRef } = React;
+
+        // =========================================================================
+        // 共通データ・コンポーネント群 (既存の3タブ用)
+        // =========================================================================
+        const PRESETS = [
+            { id: 'balance', name: '【推奨】3要素バランス型 (均等15 / 人口50 / 財政35)', equal: 15, pop: 50, finance: 35, desc: '【理由】システムに対する「基本参加料（均等割）」を設けつつ、規模と負担能力のバランスをとったモデル。合意を得やすい現実的な着地点です。' },
+            { id: 'legacy', name: '規模重視型 (均等0 / 人口50 / 財政50)', equal: 0, pop: 50, finance: 50, desc: '【理由】均等割がないため大規模市への負担集中がやや大きくなりますが、住民1人あたりの負担という観点では説明しやすいモデルです。' },
+            { id: 'equal_heavy', name: '均等割重視・インフラ相乗り型 (均等20 / 人口45 / 財政35)', equal: 20, pop: 45, finance: 35, desc: '【理由】「最新のシステム基盤を全員で共同利用する」観点から均等割を高めに設定。中小規模本部の絶対額でのコスト減メリットを打ち出します。' },
+            { id: 'pop_only', name: '人口比例型（比較参考用） (均等0 / 人口100 / 財政0)', equal: 0, pop: 100, finance: 0, desc: '【理由】住民1人あたりの負担額を完全に同一にするモデル。各市の財政力格差やシステムの「基本料」概念が欠落しているため、最終合意には至りにくいです。' },
+            { id: 'custom', name: '手動調整 (カスタム)', equal: null, pop: null, finance: null, desc: '【理由】スライダーで調整した独自の比率です。協議の中で妥協点をリアルタイムに模索するために使用します。' }
+        ];
+
+        const INFLATION_SCENARIOS = [
+            { id: 'none', name: '現状維持 (±0%)', rate: 1.0, desc: '現在の物価水準・為替が継続する前提' },
+            { id: 'mild', name: 'マイルド (+10%)', rate: 1.10, desc: '年率約1%の緩やかな物価上昇が継続' },
+            { id: 'standard', name: '標準インフレ (+22%)', rate: 1.22, desc: '年率約2%の物価上昇が継続 (政府目標水準)' },
+            { id: 'high', name: '急上昇リスク (+34%)', rate: 1.34, desc: 'インフレ・円安・資材高騰リスクを最大限織り込む' }
+        ];
+
+        const NISHI_MIKAWA_HQS = [
+            { 
+                id: 'kinuura', name: '衣浦東部', color: 'bg-blue-600', isGroup: true, isActive: true, pop: 0, finance: 0, calls: 0, 
+                children: [
+                    { id: 'kariya', name: '刈谷市', pop: 153834, finance: 360.5, calls: 7500, isActive: true },
+                    { id: 'anjo', name: '安城市', pop: 188693, finance: 456.2, calls: 8500, isActive: true },
+                    { id: 'takahama', name: '高浜市', pop: 48129, finance: 128.8, calls: 2000, isActive: true },
+                    { id: 'chiryu', name: '知立市', pop: 72211, finance: 163.3, calls: 3500, isActive: true },
+                    { id: 'hekinan', name: '碧南市', pop: 72591, finance: 204.9, calls: 3500, isActive: true }
+                ]
+            },
+            { id: 'toyota', name: '豊田市', pop: 418941, finance: 1049.0, calls: 20000, color: 'bg-green-600', isActive: true },
+            { id: 'okazaki', name: '岡崎市', pop: 384654, finance: 926.7, calls: 19000, color: 'bg-yellow-500', isActive: true },
+            { id: 'nishio', name: '西尾市', pop: 169046, finance: 416.1, calls: 8000, color: 'bg-purple-600', isActive: true },
+            { id: 'kota', name: '幸田町', pop: 42751, finance: 72.1, calls: 2000, color: 'bg-pink-500', isActive: true }
+        ];
+
+        const ALL_MIKAWA_HQS = [
+            ...JSON.parse(JSON.stringify(NISHI_MIKAWA_HQS)),
+            { id: 'toyohashi', name: '豊橋市', pop: 371920, finance: 795.0, calls: 16000, color: 'bg-teal-600', isActive: true },
+            { id: 'toyokawa', name: '豊川市', pop: 184659, finance: 385.0, calls: 8000, color: 'bg-indigo-500', isActive: true },
+            { id: 'gamagori', name: '蒲郡市', pop: 79451, finance: 165.0, calls: 3500, color: 'bg-cyan-500', isActive: true },
+            { id: 'tahara', name: '田原市', pop: 59360, finance: 135.0, calls: 2500, color: 'bg-lime-500', isActive: true },
+            { id: 'shinshiro', name: '新城市', pop: 44057, finance: 115.0, calls: 2000, color: 'bg-emerald-500', isActive: true }
+        ];
+
+        const AICHI_HQS = [
+            { id: 'nagoya', name: '名古屋市', pop: 2326000, finance: 5120.0, calls: 145000, color: 'bg-red-600', isActive: true },
+            { id: 'ichinomiya', name: '一宮市', pop: 378000, finance: 810.0, calls: 21000, color: 'bg-orange-500', isActive: true },
+            { id: 'kasugai', name: '春日井市', pop: 307000, finance: 650.0, calls: 17000, color: 'bg-amber-500', isActive: true },
+            { id: 'komaki', name: '小牧市', pop: 148000, finance: 350.0, calls: 7000, color: 'bg-yellow-500', isActive: true },
+            { id: 'inazawa', name: '稲沢市', pop: 135000, finance: 310.0, calls: 6500, color: 'bg-lime-500', isActive: true },
+            { id: 'seto', name: '瀬戸市', pop: 127000, finance: 280.0, calls: 6000, color: 'bg-green-500', isActive: true },
+            { id: 'konan', name: '江南市', pop: 97000, finance: 200.0, calls: 4500, color: 'bg-emerald-500', isActive: true },
+            { id: 'owariasahi', name: '尾張旭市', pop: 82000, finance: 180.0, calls: 3700, color: 'bg-teal-500', isActive: true },
+            { id: 'inuyama', name: '犬山市', pop: 72000, finance: 180.0, calls: 3500, color: 'bg-cyan-500', isActive: true },
+            { id: 'iwakura', name: '岩倉市', pop: 48000, finance: 110.0, calls: 2300, color: 'bg-sky-500', isActive: true },
+            { 
+                id: 'nishikasugai', name: '西春日井広域', color: 'bg-blue-500', isGroup: true, isActive: true, pop: 0, finance: 0, calls: 0, 
+                children: [
+                    { id: 'kiyosu', name: '清須市', pop: 67000, finance: 170.0, calls: 3300, isActive: true },
+                    { id: 'kitanagoya', name: '北名古屋市', pop: 86000, finance: 200.0, calls: 4000, isActive: true },
+                    { id: 'toyoyama', name: '豊山町', pop: 15000, finance: 40.0, calls: 800, isActive: true }
+                ]
+            },
+            { 
+                id: 'niwa', name: '丹羽消防組合', color: 'bg-indigo-500', isGroup: true, isActive: true, pop: 0, finance: 0, calls: 0, 
+                children: [
+                    { id: 'oguchi', name: '大口町', pop: 24000, finance: 80.0, calls: 1200, isActive: true },
+                    { id: 'fuso', name: '扶桑町', pop: 34000, finance: 70.0, calls: 1600, isActive: true }
+                ]
+            },
+            { id: 'tsushima', name: '津島市', pop: 60000, finance: 150.0, calls: 3000, color: 'bg-violet-500', isActive: true },
+            { id: 'aisai', name: '愛西市', pop: 60000, finance: 150.0, calls: 3000, color: 'bg-purple-500', isActive: true },
+            { id: 'kanie', name: '蟹江町', pop: 37000, finance: 80.0, calls: 1800, color: 'bg-fuchsia-500', isActive: true },
+            { 
+                id: 'ama_tobu', name: '海部東部消防', color: 'bg-pink-500', isGroup: true, isActive: true, pop: 0, finance: 0, calls: 0, 
+                children: [
+                    { id: 'ama', name: 'あま市', pop: 86000, finance: 180.0, calls: 4000, isActive: true },
+                    { id: 'oharu', name: '大治町', pop: 32000, finance: 60.0, calls: 1500, isActive: true }
+                ]
+            },
+            { 
+                id: 'ama_nanbu', name: '海部南部消防', color: 'bg-rose-500', isGroup: true, isActive: true, pop: 0, finance: 0, calls: 0, 
+                children: [
+                    { id: 'yatomi', name: '弥富市', pop: 42000, finance: 110.0, calls: 2000, isActive: true },
+                    { id: 'tobishima', name: '飛島村', pop: 4000, finance: 50.0, calls: 200, isActive: true }
+                ]
+            },
+            { id: 'tokai', name: '東海市', pop: 112000, finance: 380.0, calls: 5500, color: 'bg-red-400', isActive: true },
+            { id: 'obu', name: '大府市', pop: 92000, finance: 250.0, calls: 4000, color: 'bg-orange-400', isActive: true },
+            { id: 'chita', name: '知多市', pop: 83000, finance: 200.0, calls: 3800, color: 'bg-amber-400', isActive: true },
+            { id: 'tokoname', name: '常滑市', pop: 58000, finance: 160.0, calls: 2800, color: 'bg-yellow-400', isActive: true },
+            { 
+                id: 'bisan', name: '尾三消防組合', color: 'bg-emerald-600', isGroup: true, isActive: true, pop: 0, finance: 0, calls: 0, 
+                children: [
+                    { id: 'nisshin', name: '日進市', pop: 93000, finance: 185.0, calls: 4500, isActive: true },
+                    { id: 'miyoshi', name: 'みよし市', pop: 61000, finance: 142.0, calls: 3000, isActive: true },
+                    { id: 'toyoake', name: '豊明市', pop: 68000, finance: 153.0, calls: 3500, isActive: true },
+                    { id: 'nagakute', name: '長久手市', pop: 60000, finance: 135.0, calls: 3000, isActive: true },
+                    { id: 'togo', name: '東郷町', pop: 44000, finance: 95.0, calls: 2000, isActive: true }
+                ]
+            },
+            { 
+                id: 'chita_chubu', name: '知多中部広域', color: 'bg-teal-500', isGroup: true, isActive: true, pop: 0, finance: 0, calls: 0, 
+                children: [
+                    { id: 'handa', name: '半田市', pop: 117000, finance: 260.0, calls: 5500, isActive: true },
+                    { id: 'agui', name: '阿久比町', pop: 28000, finance: 60.0, calls: 1300, isActive: true },
+                    { id: 'taketoyo', name: '武豊町', pop: 43000, finance: 90.0, calls: 2000, isActive: true },
+                    { id: 'higashiura', name: '東浦町', pop: 49000, finance: 100.0, calls: 2300, isActive: true }
+                ]
+            },
+            { 
+                id: 'chita_nanbu', name: '知多南部消防', color: 'bg-cyan-600', isGroup: true, isActive: true, pop: 0, finance: 0, calls: 0, 
+                children: [
+                    { id: 'minamichita', name: '南知多町', pop: 17000, finance: 40.0, calls: 800, isActive: true },
+                    { id: 'mihama', name: '美浜町', pop: 22000, finance: 50.0, calls: 1000, isActive: true }
+                ]
+            },
+            ...JSON.parse(JSON.stringify(ALL_MIKAWA_HQS))
+        ];
+
+        const Simulator = ({ config }) => {
+            const [baseInitialCost, setBaseInitialCost] = useState(config.initialCost);
+            const [baseRunningCost, setBaseRunningCost] = useState(config.runningCost);
+            const [inflation, setInflation] = useState(INFLATION_SCENARIOS[0]);
+            
+            const [headquarters, setHeadquarters] = useState(() => JSON.parse(JSON.stringify(config.hqs)));
+
+            const initialCost = useMemo(() => Math.round(baseInitialCost * inflation.rate), [baseInitialCost, inflation]);
+            const runningCost = useMemo(() => Math.round(baseRunningCost * inflation.rate), [baseRunningCost, inflation]);
+
+            const [selectedPattern, setSelectedPattern] = useState(PRESETS[0]);
+            const [weightEqual, setWeightEqual] = useState(PRESETS[0].equal);
+            const [weightPop, setWeightPop] = useState(PRESETS[0].pop);
+            const [weightFinance, setWeightFinance] = useState(PRESETS[0].finance);
+            const [weightError, setWeightError] = useState('');
+
+            useEffect(() => {
+                const total = Number(weightEqual) + Number(weightPop) + Number(weightFinance);
+                setWeightError(total !== 100 ? `按分ウェイトの合計が100%になりません (現在: ${total}%)` : '');
+            }, [weightEqual, weightPop, weightFinance]);
+
+            const activeTotals = useMemo(() => {
+                let pop = 0; let finance = 0; let calls = 0;
+                headquarters.forEach(hq => {
+                    if (hq.isActive) {
+                        if (hq.isGroup) {
+                            hq.children.forEach(c => {
+                                if (c.isActive) { pop += c.pop; finance += c.finance; calls += c.calls; }
+                            });
+                        } else {
+                            pop += hq.pop; finance += hq.finance; calls += hq.calls;
+                        }
+                    }
+                });
+                return { pop: pop || 1, finance: finance || 1, calls: calls || 1 };
+            }, [headquarters]);
+
+            const calculatedData = useMemo(() => {
+                const processedHqs = headquarters.map(hq => {
+                    if (!hq.isActive) return { ...hq, activePop: 0, activeFinance: 0, activeCalls: 0, activeChildCount: 0 };
+                    if (hq.isGroup && hq.children) {
+                        const activeChildren = hq.children.filter(c => c.isActive);
+                        return {
+                            ...hq,
+                            activePop: activeChildren.reduce((s, c) => s + c.pop, 0),
+                            activeFinance: activeChildren.reduce((s, c) => s + c.finance, 0),
+                            activeCalls: activeChildren.reduce((s, c) => s + c.calls, 0),
+                            activeChildCount: activeChildren.length
+                        };
+                    } else {
+                        return { ...hq, activePop: hq.pop, activeFinance: hq.finance, activeCalls: hq.calls, activeChildCount: 0 };
+                    }
+                });
+
+                const totalActivePop = processedHqs.reduce((s, hq) => s + hq.activePop, 0) || 1; 
+                const totalActiveFinance = processedHqs.reduce((s, hq) => s + hq.activeFinance, 0) || 1;
+                const totalActiveCalls = processedHqs.reduce((s, hq) => s + hq.activeCalls, 0) || 1;
+                const activeHqCount = processedHqs.filter(h => h.isActive).length || 1;
+
+                return processedHqs.map(hq => {
+                    if (!hq.isActive) {
+                        const empty = { total: 0, ratio: 0 };
+                        return { ...hq, initial: empty, running: empty, calculatedChildren: hq.children ? hq.children.map(c => ({...c, initial: empty, running: empty})) : [] };
+                    }
+                    const costEqual = (initialCost * (weightEqual / 100)) / activeHqCount;
+                    const costPop = initialCost * (weightPop / 100) * (hq.activePop / totalActivePop);
+                    const costFinance = initialCost * (weightFinance / 100) * (hq.activeFinance / totalActiveFinance);
+                    
+                    const initialTotal = Math.round(costEqual + costPop + costFinance);
+                    const initialRatio = initialCost > 0 ? (initialTotal / initialCost) * 100 : 0;
+                    const runningTotal = Math.round(runningCost * (hq.activeCalls / totalActiveCalls));
+                    const runningRatio = totalActiveCalls > 0 ? (hq.activeCalls / totalActiveCalls) * 100 : 0; 
+
+                    const parentData = { ...hq, initial: { total: initialTotal, ratio: initialRatio }, running: { total: runningTotal, ratio: runningRatio } };
+
+                    if (hq.isGroup && hq.children) {
+                        parentData.calculatedChildren = hq.children.map(child => {
+                            if (!child.isActive) return { ...child, initial: { total: 0, ratio: 0 }, running: { total: 0, ratio: 0 } };
+                            const c_equal = costEqual / hq.activeChildCount;
+                            const c_pop = hq.activePop > 0 ? costPop * (child.pop / hq.activePop) : 0;
+                            const c_finance = hq.activeFinance > 0 ? costFinance * (child.finance / hq.activeFinance) : 0;
+                            const c_initialTotal = Math.round(c_equal + c_pop + c_finance);
+                            const c_initialRatio = initialCost > 0 ? (c_initialTotal / initialCost) * 100 : 0;
+                            const c_runningTotal = hq.activeCalls > 0 ? Math.round(runningTotal * (child.calls / hq.activeCalls)) : 0;
+                            const c_runningRatio = totalActiveCalls > 0 ? (child.calls / totalActiveCalls) * 100 : 0; 
+                            return { ...child, initial: { total: c_initialTotal, ratio: c_initialRatio }, running: { total: c_runningTotal, ratio: c_runningRatio } };
+                        });
+                    }
+                    return parentData;
+                });
+            }, [initialCost, runningCost, weightEqual, weightPop, weightFinance, headquarters]);
+
+            const formatCurrency = (manYen) => {
+                if (manYen === 0) return '0円';
+                const oku = Math.floor(manYen / 10000);
+                const man = Math.round(manYen % 10000);
+                if (oku > 0) return man > 0 ? `${oku.toLocaleString()}億 ${man.toLocaleString()}万円` : `${oku.toLocaleString()}億円`;
+                return `${man.toLocaleString()}万円`;
+            };
+
+            const handleDataChange = (index, field, value, childIndex = null) => {
+                const newData = [...headquarters];
+                if (childIndex !== null) newData[index].children[childIndex][field] = Number(value);
+                else newData[index][field] = Number(value);
+                setHeadquarters(newData);
+            };
+
+            const handleToggleActive = (index, childIndex = null) => {
+                const newData = [...headquarters];
+                if (childIndex !== null) {
+                    newData[index].children[childIndex].isActive = !newData[index].children[childIndex].isActive;
+                    newData[index].isActive = newData[index].children.some(c => c.isActive);
+                } else {
+                    const newStatus = !newData[index].isActive;
+                    newData[index].isActive = newStatus;
+                    if (newData[index].isGroup && newData[index].children) newData[index].children.forEach(c => c.isActive = newStatus);
+                }
+                setHeadquarters(newData);
+            };
+
+            const handlePatternSelect = (e) => {
+                const pattern = PRESETS.find(p => p.id === e.target.value);
+                setSelectedPattern(pattern);
+                if (pattern.id !== 'custom') { setWeightEqual(pattern.equal); setWeightPop(pattern.pop); setWeightFinance(pattern.finance); }
+            };
+
+            const handleSliderChange = (setter, value) => {
+                setter(value);
+                setSelectedPattern(PRESETS.find(p => p.id === 'custom'));
+            };
+
+            const activeHqs = calculatedData.filter(hq => hq.isActive);
+            const sortedActiveHqs = [...activeHqs].sort((a, b) => b.initial.total - a.initial.total);
+            const top1 = sortedActiveHqs.length > 0 ? sortedActiveHqs[0] : null;
+            const top2 = sortedActiveHqs.length > 1 ? sortedActiveHqs[1] : null;
+
+            return (
+                <div className="p-4 md:p-6 lg:p-8 flex flex-col gap-6 max-w-[95rem] mx-auto bg-gray-100 min-h-screen">
+                    <header className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 page-break-inside-avoid">
+                        <div>
+                            <h1 className="text-2xl md:text-3xl font-bold text-gray-800">{config.title}</h1>
+                            <p className="text-gray-500 mt-2 text-sm md:text-base print-hide">{config.desc}</p>
+                        </div>
+                        <button onClick={() => window.print()} className="print-hide flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-5 py-2.5 rounded-lg font-bold transition-colors shadow-sm whitespace-nowrap shrink-0">
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                            結果を印刷・PDF出力
+                        </button>
+                    </header>
+
+                    <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                        <div className="xl:col-span-4 flex flex-col gap-6">
+                            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                                <h2 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-4">総事業費 (共通経費分)</h2>
+                                <div className="space-y-4 mb-6">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">初期導入費・現在概算 (万円)</label>
+                                        <div className="relative">
+                                            <input type="number" value={baseInitialCost} onChange={(e) => setBaseInitialCost(Number(e.target.value))} className="w-full pl-3 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                                            <span className="absolute right-3 top-2 text-gray-500 text-sm">万円</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">年間運用費・現在概算 (万円)</label>
+                                        <div className="relative">
+                                            <input type="number" value={baseRunningCost} onChange={(e) => setBaseRunningCost(Number(e.target.value))} className="w-full pl-3 pr-10 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" />
+                                            <span className="absolute right-3 top-2 text-gray-500 text-sm">万円</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="bg-orange-50 -mx-5 -mb-5 p-5 rounded-b-xl border-t border-orange-100">
+                                    <h3 className="text-sm font-bold text-orange-800 mb-3 flex items-center gap-1.5">
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+                                        10年後の物価変動リスク (インフレ加味)
+                                    </h3>
+                                    <div className="grid grid-cols-2 gap-2 mb-3">
+                                        {INFLATION_SCENARIOS.map(sc => (
+                                            <button key={sc.id} onClick={() => setInflation(sc)} className={`py-1.5 px-2 text-xs font-medium rounded border transition-colors ${inflation.id === sc.id ? 'bg-orange-500 text-white border-orange-600 shadow-sm' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}>
+                                                {sc.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <p className="text-[11px] text-orange-700 mb-3 leading-tight font-medium">{inflation.desc}</p>
+                                    <div className="bg-white p-3 rounded border border-orange-200 shadow-inner space-y-1">
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="text-gray-600">反映後 初期導入費:</span>
+                                            <span className="font-bold text-orange-700">{formatCurrency(initialCost)}</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="text-gray-600">反映後 年間運用費:</span>
+                                            <span className="font-bold text-orange-700">{formatCurrency(runningCost)} / 年</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                                <div className="flex justify-between items-center border-b pb-2 mb-4">
+                                    <h2 className="text-lg font-semibold text-gray-800">初期導入費 按分ウェイト</h2>
+                                </div>
+                                <div className="mb-6">
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">協議用パターンの選択</label>
+                                    <select value={selectedPattern.id} onChange={handlePatternSelect} className="w-full p-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 bg-gray-50 mb-3 text-sm font-medium text-gray-800 cursor-pointer">
+                                        {PRESETS.map(p => (
+                                            <option key={p.id} value={p.id}>{p.name}</option>
+                                        ))}
+                                    </select>
+                                    <div className="bg-blue-50 p-3.5 rounded-lg border border-blue-200 shadow-inner">
+                                        <p className="text-sm text-blue-900 leading-relaxed font-medium">{selectedPattern.desc}</p>
+                                    </div>
+                                </div>
+                                {weightError && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-4 border border-red-200">{weightError}</div>}
+                                <div className="space-y-5">
+                                    <div>
+                                        <div className="flex justify-between mb-1"><label className="text-sm font-medium text-gray-700">均等割 (基本料的要素)</label><span className="text-sm font-bold">{weightEqual}%</span></div>
+                                        <input type="range" min="0" max="100" value={weightEqual} onChange={(e) => handleSliderChange(setWeightEqual, e.target.value)} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600 print-hide" />
+                                    </div>
+                                    <div>
+                                        <div className="flex justify-between mb-1"><label className="text-sm font-medium text-gray-700">人口割 (規模的要素)</label><span className="text-sm font-bold">{weightPop}%</span></div>
+                                        <input type="range" min="0" max="100" value={weightPop} onChange={(e) => handleSliderChange(setWeightPop, e.target.value)} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-green-600 print-hide" />
+                                    </div>
+                                    <div>
+                                        <div className="flex justify-between mb-1"><label className="text-sm font-medium text-gray-700">財政需要額割 (負担能力)</label><span className="text-sm font-bold">{weightFinance}%</span></div>
+                                        <input type="range" min="0" max="100" value={weightFinance} onChange={(e) => handleSliderChange(setWeightFinance, e.target.value)} className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-purple-600 print-hide" />
+                                    </div>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-4 leading-tight">※ 運用維持費は原則として受益者負担となる「通報件数割（100%）」で計算されます。</p>
+                            </div>
+                        </div>
+
+                        <div className="xl:col-span-8 flex flex-col gap-6">
+                            <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+                                <h2 className="text-xl font-bold text-gray-800 border-b pb-3 mb-5 flex items-center gap-2">
+                                    <svg className="w-6 h-6 text-blue-600 print-hide" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                    初期導入費 負担シミュレーション
+                                </h2>
+                                
+                                <div className="bg-blue-50/70 p-5 rounded-lg border border-blue-200 mb-6 shadow-inner page-break-inside-avoid">
+                                    <h3 className="font-bold text-blue-900 mb-2.5 flex items-center gap-1.5 text-sm">
+                                        <svg className="w-4 h-4 print-hide" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                        シミュレーション結果 要約
+                                    </h3>
+                                    {activeHqs.length === 0 ? (
+                                        <p className="text-red-500 font-medium text-sm">※参加自治体が選択されていません。</p>
+                                    ) : (
+                                        <div className="text-sm text-gray-700 leading-relaxed space-y-2">
+                                            <p>本試算では、将来の物価変動リスクとして<strong>「{inflation.name}」</strong>を想定し、対象となる共通経費を初期導入費<strong>{formatCurrency(initialCost)}</strong>、年間運用費<strong>{formatCurrency(runningCost)}</strong>と見込んでいます。</p>
+                                            <p>経費の按分基準は<strong>「{selectedPattern.name}」</strong>（均等割 {weightEqual}% / 人口割 {weightPop}% / 財政割 {weightFinance}%）を適用しました。</p>
+                                            <p>現在選択されている<strong>参加{activeHqs.length}本部（{config.label}）</strong>における試算の結果、初期導入費の負担が最も大きいのは<strong>{top1.name}</strong>で<strong>{formatCurrency(top1.initial.total)}</strong>（全体の{top1.initial.ratio.toFixed(1)}%）となります。{top2 && `次いで${top2.name}が${formatCurrency(top2.initial.total)}（${top2.initial.ratio.toFixed(1)}%）を負担します。`}</p>
+                                            <div className="text-[11px] text-gray-500 mt-3 border-t border-blue-200/60 pt-2.5 font-medium print-hide">※この文章は、左側の条件を変更すると自動で書き換わります。議会や幹部への説明資料としてコピー＆ペーストしてご活用ください。</div>
+                                            <div className="hidden print:block text-[11px] text-gray-800 mt-3 border-t border-gray-300 pt-2.5 font-bold">※この試算結果は現時点の想定値に基づくシミュレーションであり、最終的な合意事項ではありません。</div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="text-xs text-gray-600 uppercase bg-gray-50 border-b">
+                                            <tr>
+                                                <th className="px-4 py-3 font-semibold">消防本部</th>
+                                                <th className="px-4 py-3 font-semibold text-right">総合割合</th>
+                                                <th className="px-4 py-3 font-semibold text-right">負担額</th>
+                                                <th className="px-4 py-3 font-semibold w-1/3">負担割合ビジュアル</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {calculatedData.map((data, idx) => (
+                                                <React.Fragment key={idx}>
+                                                    <tr className={`border-b transition-colors ${data.isGroup ? 'bg-blue-50/40' : ''} ${!data.isActive ? 'opacity-50 grayscale bg-gray-100' : 'hover:bg-gray-50'}`}>
+                                                        <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className={`w-3 h-3 rounded-full ${data.color}`}></span>
+                                                                <span className={!data.isActive ? 'line-through text-gray-500' : ''}>{data.name}</span>
+                                                                {!data.isActive && <span className="text-xs text-red-500 font-bold ml-1">(離脱)</span>}
+                                                                {data.isGroup && data.isActive && <span className="text-xs font-normal text-blue-600 border border-blue-200 bg-white px-1.5 py-0.5 rounded ml-1">{data.activeChildCount}市計</span>}
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-3 text-right font-bold text-gray-700">{data.isActive ? `${data.initial.ratio.toFixed(2)}%` : '-'}</td>
+                                                        <td className="px-4 py-3 text-right font-bold text-blue-700 whitespace-nowrap">{data.isActive ? formatCurrency(data.initial.total) : '0円'}</td>
+                                                        <td className="px-4 py-3">
+                                                            {data.isActive && (
+                                                                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                                                                    <div className={`${data.color} h-2.5 rounded-full`} style={{ width: `${data.initial.ratio}%` }}></div>
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                    {data.isGroup && data.calculatedChildren.map((child, cIdx) => (
+                                                        <tr key={`child-${idx}-${cIdx}`} className={`border-b text-xs transition-colors ${!child.isActive ? 'bg-gray-100 opacity-50 grayscale' : 'bg-gray-50 text-gray-600 hover:bg-gray-100'}`}>
+                                                            <td className="px-4 py-2 pl-10 whitespace-nowrap"><span className={!child.isActive ? 'line-through' : ''}>└ {child.name}</span></td>
+                                                            <td className="px-4 py-2 text-right">{child.isActive ? `${child.initial.ratio.toFixed(2)}%` : '-'}</td>
+                                                            <td className="px-4 py-2 text-right whitespace-nowrap">{child.isActive ? formatCurrency(child.initial.total) : '0円'}</td>
+                                                            <td className="px-4 py-2"></td>
+                                                        </tr>
+                                                    ))}
+                                                </React.Fragment>
+                                            ))}
+                                            <tr className="bg-gray-200 font-bold">
+                                                <td className="px-4 py-3 text-gray-900">全体合計</td>
+                                                <td className="px-4 py-3 text-right">100.00%</td>
+                                                <td className="px-4 py-3 text-right text-blue-800">{formatCurrency(initialCost)}</td>
+                                                <td></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200">
+                                    <div className="flex flex-col mb-4">
+                                        <h2 className="text-lg font-semibold text-gray-800 border-b pb-2">基礎データ (実数値による入力)</h2>
+                                        <div className="mt-4 bg-gray-50 p-3.5 rounded-lg border border-gray-200 text-xs text-gray-600 space-y-1.5">
+                                            <p className="font-bold text-gray-700 mb-2 flex items-center gap-1.5">
+                                                <svg className="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                                現在設定されている初期値の出典・年次
+                                            </p>
+                                            <p><span className="font-semibold text-gray-700">・人口:</span> 令和2年国勢調査 実績値</p>
+                                            <p><span className="font-semibold text-gray-700">・財政(基準財政需要額):</span> 近年の普通交付税算定結果 等</p>
+                                            <p><span className="font-semibold text-gray-700">・通報(119番件数):</span> 近年の概算件数</p>
+                                        </div>
+                                    </div>
+                                    <div className="overflow-x-auto max-h-[800px] overflow-y-auto">
+                                        <table className="w-full text-xs text-left">
+                                            <thead className="text-gray-600 bg-gray-50 border-b sticky top-0 z-10 shadow-sm">
+                                                <tr>
+                                                    <th className="px-2 py-2 font-medium w-8 text-center">参加</th>
+                                                    <th className="px-2 py-2 font-medium">本部・市町</th>
+                                                    <th className="px-2 py-2 font-medium text-right">人口(人)</th>
+                                                    <th className="px-2 py-2 font-medium text-right">財政(億円)</th>
+                                                    <th className="px-2 py-2 font-medium text-right">通報(件)</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {headquarters.map((hq, idx) => {
+                                                    const calcHq = calculatedData[idx];
+                                                    return (
+                                                    <React.Fragment key={idx}>
+                                                        <tr className={`border-b transition-colors ${hq.isGroup ? 'bg-blue-50/40' : ''} ${!hq.isActive ? 'opacity-50 bg-gray-100' : ''}`}>
+                                                            <td className="px-2 py-2 text-center align-top pt-3">
+                                                                <input type="checkbox" checked={hq.isActive} onChange={() => handleToggleActive(idx)} className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded cursor-pointer" />
+                                                            </td>
+                                                            <td className="px-2 py-2 font-bold text-gray-800 align-top pt-3">{hq.name}</td>
+                                                            <td className="px-2 py-2 text-right">
+                                                                {hq.isGroup ? (
+                                                                    <div className="flex flex-col items-end">
+                                                                        <span className="text-gray-700 font-bold">{Math.round(calcHq.activePop).toLocaleString()}</span>
+                                                                        {hq.isActive && <span className="text-[10px] text-gray-500 mt-0.5">({((calcHq.activePop / activeTotals.pop) * 100).toFixed(1)}%)</span>}
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="flex flex-col items-end gap-1">
+                                                                        <input type="number" step="1" value={hq.pop} disabled={!hq.isActive} onChange={(e) => handleDataChange(idx, 'pop', e.target.value)} className="w-20 p-1 border border-gray-300 rounded text-right focus:ring-blue-500 disabled:bg-gray-200"/>
+                                                                        {hq.isActive && <span className="text-[10px] text-blue-600 font-medium">({((hq.pop / activeTotals.pop) * 100).toFixed(1)}%)</span>}
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-2 py-2 text-right">
+                                                                {hq.isGroup ? (
+                                                                    <div className="flex flex-col items-end">
+                                                                        <span className="text-gray-700 font-bold">{calcHq.activeFinance.toFixed(1)}</span>
+                                                                        {hq.isActive && <span className="text-[10px] text-gray-500 mt-0.5">({((calcHq.activeFinance / activeTotals.finance) * 100).toFixed(1)}%)</span>}
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="flex flex-col items-end gap-1">
+                                                                        <input type="number" step="0.1" value={hq.finance} disabled={!hq.isActive} onChange={(e) => handleDataChange(idx, 'finance', e.target.value)} className="w-16 p-1 border border-gray-300 rounded text-right focus:ring-blue-500 disabled:bg-gray-200"/>
+                                                                        {hq.isActive && <span className="text-[10px] text-blue-600 font-medium">({((hq.finance / activeTotals.finance) * 100).toFixed(1)}%)</span>}
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                            <td className="px-2 py-2 text-right">
+                                                                {hq.isGroup ? (
+                                                                    <div className="flex flex-col items-end">
+                                                                        <span className="text-gray-700 font-bold">{Math.round(calcHq.activeCalls).toLocaleString()}</span>
+                                                                        {hq.isActive && <span className="text-[10px] text-gray-500 mt-0.5">({((calcHq.activeCalls / activeTotals.calls) * 100).toFixed(1)}%)</span>}
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="flex flex-col items-end gap-1">
+                                                                        <input type="number" step="1" value={hq.calls} disabled={!hq.isActive} onChange={(e) => handleDataChange(idx, 'calls', e.target.value)} className="w-20 p-1 border border-gray-300 rounded text-right focus:ring-blue-500 disabled:bg-gray-200"/>
+                                                                        {hq.isActive && <span className="text-[10px] text-blue-600 font-medium">({((hq.calls / activeTotals.calls) * 100).toFixed(1)}%)</span>}
+                                                                    </div>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                        {hq.isGroup && hq.children.map((child, cIdx) => (
+                                                            <tr key={`child-input-${idx}-${cIdx}`} className={`border-b transition-colors ${!child.isActive ? 'opacity-50 bg-gray-100' : 'bg-gray-50'}`}>
+                                                                <td className="px-2 py-1.5 text-center align-top pt-2.5">
+                                                                    <input type="checkbox" checked={child.isActive} onChange={() => handleToggleActive(idx, cIdx)} className="w-3.5 h-3.5 text-blue-500 bg-gray-100 border-gray-300 rounded cursor-pointer" />
+                                                                </td>
+                                                                <td className="px-2 py-1.5 pl-3 text-[11px] text-gray-600 align-top pt-2.5">└ {child.name}</td>
+                                                                <td className="px-2 py-1.5 text-right">
+                                                                    <div className="flex flex-col items-end gap-0.5">
+                                                                        <input type="number" step="1" value={child.pop} disabled={!child.isActive} onChange={(e) => handleDataChange(idx, 'pop', e.target.value, cIdx)} className="w-20 p-1 border border-gray-300 rounded text-right text-xs focus:ring-blue-500 disabled:bg-gray-200"/>
+                                                                        {child.isActive && <span className="text-[9px] text-gray-500">({((child.pop / activeTotals.pop) * 100).toFixed(1)}%)</span>}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-2 py-1.5 text-right">
+                                                                    <div className="flex flex-col items-end gap-0.5">
+                                                                        <input type="number" step="0.1" value={child.finance} disabled={!child.isActive} onChange={(e) => handleDataChange(idx, 'finance', e.target.value, cIdx)} className="w-16 p-1 border border-gray-300 rounded text-right text-xs focus:ring-blue-500 disabled:bg-gray-200"/>
+                                                                        {child.isActive && <span className="text-[9px] text-gray-500">({((child.finance / activeTotals.finance) * 100).toFixed(1)}%)</span>}
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-2 py-1.5 text-right">
+                                                                    <div className="flex flex-col items-end gap-0.5">
+                                                                        <input type="number" step="1" value={child.calls} disabled={!child.isActive} onChange={(e) => handleDataChange(idx, 'calls', e.target.value, cIdx)} className="w-20 p-1 border border-gray-300 rounded text-right text-xs focus:ring-blue-500 disabled:bg-gray-200"/>
+                                                                        {child.isActive && <span className="text-[9px] text-gray-500">({((child.calls / activeTotals.calls) * 100).toFixed(1)}%)</span>}
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </React.Fragment>
+                                                    );
+                                                })}
+                                                <tr className="bg-gray-800 font-bold text-white text-xs">
+                                                    <td colSpan="2" className="px-2 py-3 text-right">有効データ合計 (参加分)</td>
+                                                    <td className="px-2 py-3 text-right">{Math.round(activeTotals.pop).toLocaleString()} 人</td>
+                                                    <td className="px-2 py-3 text-right">{activeTotals.finance.toFixed(1)} 億円</td>
+                                                    <td className="px-2 py-3 text-right">{Math.round(activeTotals.calls).toLocaleString()} 件</td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 page-break-inside-avoid">
+                                    <h2 className="text-lg font-semibold text-gray-800 border-b pb-2 mb-4 flex items-center gap-2">
+                                        <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+                                        年間運用費 (通報件数割)
+                                    </h2>
+                                    <div className="space-y-4 mt-4 max-h-[800px] overflow-y-auto pr-2">
+                                        {calculatedData.map((data, idx) => (
+                                            <div key={idx} className={`flex flex-col gap-1 transition-opacity ${!data.isActive ? 'opacity-40 grayscale' : ''}`}>
+                                                <div className="flex justify-between text-sm">
+                                                    <span className={`font-medium flex items-center gap-1 ${!data.isActive ? 'text-gray-400 line-through' : 'text-gray-700'}`}>
+                                                        <span className={`w-2 h-2 rounded-full ${data.color}`}></span>
+                                                        {data.name}
+                                                        {data.isGroup && data.isActive && <span className="text-xs font-normal text-gray-500">({data.activeChildCount}市計)</span>}
+                                                        {!data.isActive && <span className="text-xs text-red-500 font-bold ml-1">(離脱)</span>}
+                                                    </span>
+                                                    <div className="flex gap-4">
+                                                        <span className="text-gray-500">{data.isActive ? data.running.ratio.toFixed(1) : '0.0'}%</span>
+                                                        <span className={`font-bold ${data.isActive ? 'text-green-700' : 'text-gray-400'}`}>{data.isActive ? formatCurrency(data.running.total) : '0円'}</span>
+                                                    </div>
+                                                </div>
+                                                {data.isActive && (
+                                                    <div className="w-full bg-gray-100 rounded-full h-1.5"><div className={`${data.color} h-1.5 rounded-full opacity-80`} style={{ width: `${data.running.ratio}%` }}></div></div>
+                                                )}
+                                                {data.isGroup && data.isActive && (
+                                                    <div className="mt-1.5 mb-2 pl-4 border-l-2 border-gray-200 space-y-1.5">
+                                                        {data.calculatedChildren.map((child, cIdx) => (
+                                                            <div key={`run-child-${cIdx}`} className={`flex justify-between text-xs ${!child.isActive ? 'text-gray-400 line-through' : 'text-gray-500'}`}>
+                                                                <span>└ {child.name} { !child.isActive && <span className="text-red-400 text-[10px]">(離脱)</span> }</span>
+                                                                <div className="flex gap-3"><span>{child.isActive ? child.running.ratio.toFixed(1) : '0.0'}%</span><span>{child.isActive ? formatCurrency(child.running.total) : '0円'}</span></div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="mt-5 pt-3 border-t flex justify-between font-bold text-sm text-gray-800 sticky bottom-0 bg-white">
+                                        <span>全体合計</span><span className="text-green-800">{formatCurrency(runningCost)} / 年</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const ComprehensiveSimulator = () => {
+            const [subTab, setSubTab] = useState('step1');
+
+            // Format Helpers
+            const formatOku = amount => {
+                if (isNaN(amount) || !isFinite(amount)) return '0.00 億円';
+                return (amount / 100000000).toFixed(2) + ' 億円';
+            };
+            const formatOkuSigned = amount => {
+                if (isNaN(amount) || !isFinite(amount)) return `±0 億円`;
+                const val = (Math.abs(amount) / 100000000).toFixed(2);
+                if (amount > 0) return <span className="text-emerald-500 font-bold">+{val} 億円</span>;
+                if (amount < 0) return <span className="text-red-400 font-bold">-{val} 億円</span>;
+                return `±0 億円`;
+            };
+
+            // ---- STEP 1 State ----
+            const [s1Method, setS1Method] = useState('weighted');
+            const [s1Gross, setS1Gross] = useState(2645165600);
+            const [s1ExOA, setS1ExOA] = useState(0);
+            const [s1ExRadio, setS1ExRadio] = useState(0);
+            const [s1ExOther, setS1ExOther] = useState(0);
+            const [s1Maint, setS1Maint] = useState(397939102);
+            const [s1Op, setS1Op] = useState(151649630);
+            const [s1Mid, setS1Mid] = useState(601382100);
+            const [s1Hqs, setS1Hqs] = useState([
+                { id: 'h1_0', name: '岡崎市', ratio: 85, isBase: true },
+                { id: 'h1_1', name: '幸田町', ratio: 15, isBase: false }
+            ]);
+            const [s1Yrs, setS1Yrs] = useState(10);
+            const [s1R1, setS1R1] = useState(1.0);
+            const [s1R2, setS1R2] = useState(2.0);
+            const [s1R3, setS1R3] = useState(3.0);
+            
+            const s1ChartRef = useRef(null);
+            const chartInstance1 = useRef(null);
+
+            // ---- STEP 2 State ----
+            const [s2GInit, setS2GInit] = useState(5000000000);
+            const [s2GMaint, setS2GMaint] = useState(2500000000);
+            const [s2GMid, setS2GMid] = useState(1200000000);
+            const [s2GBldg, setS2GBldg] = useState(1000000000);
+            const [s2GFacil, setS2GFacil] = useState(300000000);
+            const [s2UseBonds, setS2UseBonds] = useState(false);
+            const [s2BondRatio, setS2BondRatio] = useState(100);
+            const [s2TaxRatio, setS2TaxRatio] = useState(50);
+            const [s2Shift, setS2Shift] = useState(3);
+            const [s2StaffPer, setS2StaffPer] = useState(15);
+            const [s2DayStaff, setS2DayStaff] = useState(6);
+            const [s2UnitCost, setS2UnitCost] = useState(8000000);
+            const [s2Alloc, setS2Alloc] = useState('pop');
+            const [s2MixPop, setS2MixPop] = useState(50);
+            const [s2Hqs, setS2Hqs] = useState([
+                { id: 'okazaki', name: '岡崎市', pop: 383000, finance: 58000, currentStaff: 24, singleInit: 3500000000, singleMaint: 1549000000, singleMid: 601000000, oaCost: 0, radioCost: 0, otherCost: 0, color: '#3b82f6', manualRatio: 0 },
+                { id: 'toyota', name: '豊田市', pop: 416000, finance: 62000, currentStaff: 25, singleInit: 3600000000, singleMaint: 1600000000, singleMid: 700000000, oaCost: 0, radioCost: 0, otherCost: 0, color: '#ef4444', manualRatio: 0 },
+                { id: 'nishio', name: '西尾市', pop: 169000, finance: 31000, currentStaff: 12, singleInit: 1800000000, singleMaint: 800000000, singleMid: 300000000, oaCost: 0, radioCost: 0, otherCost: 0, color: '#f59e0b', manualRatio: 0 },
+                { id: 'kota', name: '幸田町', pop: 42000,  finance: 7500,  currentStaff: 5,  singleInit: 800000000, singleMaint: 400000000, singleMid: 150000000, oaCost: 0, radioCost: 0, otherCost: 0, color: '#10b981', manualRatio: 0 },
+                { id: 'kinuura', name: '衣浦東部', pop: 540000, finance: 95000, currentStaff: 30, singleInit: 4000000000, singleMaint: 1800000000, singleMid: 800000000, oaCost: 0, radioCost: 0, otherCost: 0, color: '#8b5cf6', manualRatio: 0 }
+            ]);
+
+            const s2LccChartRef = useRef(null);
+            const s2ImpactChartRef = useRef(null);
+            const chartInstance2Lcc = useRef(null);
+            const chartInstance2Impact = useRef(null);
+
+            // ---- STEP 1 Calculations ----
+            const step1Calc = useMemo(() => {
+                const netInit = s1Gross - (s1ExOA + s1ExRadio + s1ExOther);
+                const opEx = (s1Maint * 2) + s1Op + s1Mid;
+                const curLCC = netInit + opEx;
+                
+                let totalRatio = s1Hqs.reduce((s, h) => s + h.ratio, 0) || 1;
+                const baseHq = s1Hqs.find(h => h.isBase) || s1Hqs[0] || { ratio: 0, name: '全体' };
+                const basePct = baseHq.ratio / totalRatio;
+
+                const r1 = s1R1/100, r2 = s1R2/100, r3 = s1R3/100, yrs = s1Yrs;
+                let fCap1, fCap2, fCap3, fLcc1, fLcc2, fLcc3;
+
+                if (s1Method === 'compound') {
+                    fCap1 = netInit*Math.pow(1+r1,yrs); fCap2 = netInit*Math.pow(1+r2,yrs); fCap3 = netInit*Math.pow(1+r3,yrs);
+                    fLcc1 = curLCC*Math.pow(1+r1,yrs);  fLcc2 = curLCC*Math.pow(1+r2,yrs);  fLcc3 = curLCC*Math.pow(1+r3,yrs);
+                } else if(s1Method === 'weighted') {
+                    const f1 = 0.35*Math.pow(1.01,yrs) + 0.45*Math.pow(1.02,yrs) + 0.2*Math.pow(1.015,yrs);
+                    const f2 = 0.35*Math.pow(1.015,yrs)+ 0.45*Math.pow(1.032,yrs)+ 0.2*Math.pow(1.028,yrs);
+                    const f3 = 0.35*Math.pow(1.025,yrs)+ 0.45*Math.pow(1.045,yrs)+ 0.2*Math.pow(1.038,yrs);
+                    fCap1 = netInit*f1; fCap2 = netInit*f2; fCap3 = netInit*f3;
+                    fLcc1 = curLCC*f1;  fLcc2 = curLCC*f2;  fLcc3 = curLCC*f3;
+                } else {
+                    const f1 = Math.pow(1.015,Math.min(5,yrs))*Math.pow(1.008,Math.max(0,yrs-5));
+                    const f2 = Math.pow(1.030,Math.min(5,yrs))*Math.pow(1.015,Math.max(0,yrs-5));
+                    const f3 = Math.pow(1.045,Math.min(5,yrs))*Math.pow(1.020,Math.max(0,yrs-5));
+                    fCap1 = netInit*f1; fCap2 = netInit*f2; fCap3 = netInit*f3;
+                    fLcc1 = curLCC*f1;  fLcc2 = curLCC*f2;  fLcc3 = curLCC*f3;
+                }
+
+                const scenarios = [
+                    {n: s1Method==='compound'?'シナリオ1 (マイルド)':s1Method==='weighted'?'保守的推計':'早期収束型', c: fCap1, l: fLcc1, col:'text-emerald-700'},
+                    {n: s1Method==='compound'?'シナリオ2 (標準)':s1Method==='weighted'?'加重平均推計':'2段階標準型', c: fCap2, l: fLcc2, col:'text-blue-700 font-bold'},
+                    {n: s1Method==='compound'?'シナリオ3 (高騰警戒)':s1Method==='weighted'?'IT高騰推計':'長期化型', c: fCap3, l: fLcc3, col:'text-amber-700'}
+                ];
+
+                const labels = Array.from({length: yrs+1}, (_,i)=>`${i}年後`);
+                const cr1 = curLCC > 0 ? Math.pow(fLcc1/curLCC, 1/yrs)-1 : 0;
+                const cr2 = curLCC > 0 ? Math.pow(fLcc2/curLCC, 1/yrs)-1 : 0;
+                const cr3 = curLCC > 0 ? Math.pow(fLcc3/curLCC, 1/yrs)-1 : 0;
+                const d1 = labels.map((_,i)=> (curLCC*Math.pow(1+cr1,i))/100000000);
+                const d2 = labels.map((_,i)=> (curLCC*Math.pow(1+cr2,i))/100000000);
+                const d3 = labels.map((_,i)=> (curLCC*Math.pow(1+cr3,i))/100000000);
+
+                return { netInit, opEx, curLCC, totalRatio, baseHq, basePct, fLcc2, scenarios, labels, d1, d2, d3, fCap2 };
+            }, [s1Method, s1Gross, s1ExOA, s1ExRadio, s1ExOther, s1Maint, s1Op, s1Mid, s1Hqs, s1Yrs, s1R1, s1R2, s1R3]);
+
+            useEffect(() => {
+                if (subTab === 'step1' && s1ChartRef.current && window.Chart) {
+                    if (chartInstance1.current) chartInstance1.current.destroy();
+                    chartInstance1.current = new Chart(s1ChartRef.current, {
+                        type: 'line',
+                        data: {
+                            labels: step1Calc.labels,
+                            datasets: [
+                                {label: step1Calc.scenarios[0].n, data: step1Calc.d1, borderColor:'#10b981', backgroundColor:'#10b98120', tension:0.3},
+                                {label: step1Calc.scenarios[1].n, data: step1Calc.d2, borderColor:'#2563eb', backgroundColor:'#2563eb20', borderWidth:3, tension:0.3},
+                                {label: step1Calc.scenarios[2].n, data: step1Calc.d3, borderColor:'#f59e0b', backgroundColor:'#f59e0b20', tension:0.3}
+                            ]
+                        },
+                        options: { responsive:true, maintainAspectRatio:false, plugins:{ legend:{position:'bottom'} } }
+                    });
+                }
+            }, [step1Calc, subTab]);
+
+            // ---- STEP 2 Calculations ----
+            const step2Calc = useMemo(() => {
+                const grossGlobalLCC = s2GInit + s2GMaint + s2GMid + s2GBldg + s2GFacil;
+                const bondTarget = s2GInit + s2GBldg;
+                const bondSubsidy = bondTarget * (s2BondRatio/100) * (s2TaxRatio/100);
+                const effectiveLCC = s2UseBonds ? grossGlobalLCC - bondSubsidy : grossGlobalLCC;
+                
+                const totStaff = (s2Shift * s2StaffPer) + s2DayStaff;
+                let tPop = 0, tFin = 0, tCurStaff = 0, sumSLcc = 0, sumSysSav = 0, sumStfSav = 0, sumTot = 0;
+                
+                const cLbl=[], cCol=[], cSLcc=[], cWLcc=[], cTot=[];
+
+                const results = s2Hqs.map(h => {
+                    tPop += h.pop; tFin += h.finance; tCurStaff += h.currentStaff;
+                    const grossS = h.singleInit + h.singleMaint + h.singleMid;
+                    const exS = h.oaCost + h.radioCost + h.otherCost;
+                    const sLcc = grossS - exS;
+                    return { ...h, sLcc };
+                }).map(h => {
+                    const rPop = tPop>0 ? h.pop/tPop : 0; 
+                    const rFin = tFin>0 ? h.finance/tFin : 0;
+                    let ratio = 0;
+                    if(s2Alloc === 'pop') ratio = rPop;
+                    else if(s2Alloc === 'fin') ratio = rFin;
+                    else if(s2Alloc === 'mix') ratio = rPop*(s2MixPop/100) + rFin*((100-s2MixPop)/100);
+                    else ratio = h.manualRatio / 100;
+
+                    const wLcc = effectiveLCC * ratio;
+                    const fStf = totStaff * ratio;
+                    const sysSav = h.sLcc - wLcc;
+                    const stfSav = (h.currentStaff - fStf) * s2UnitCost * 10;
+                    const totImp = sysSav + stfSav;
+
+                    sumSLcc+=h.sLcc; sumSysSav+=sysSav; sumStfSav+=stfSav; sumTot+=totImp;
+                    cLbl.push(h.name); cCol.push(h.color); cSLcc.push((h.sLcc/100000000).toFixed(1)); cWLcc.push((wLcc/100000000).toFixed(1)); cTot.push((totImp/100000000).toFixed(1));
+
+                    return { ...h, ratio, wLcc, fStf, sysSav, stfSav, totImp };
+                });
+
+                return { 
+                    grossGlobalLCC, bondTarget, bondSubsidy, effectiveLCC, totStaff, 
+                    tPop, tFin, tCurStaff, sumSLcc, sumSysSav, sumStfSav, sumTot, results, 
+                    cLbl, cCol, cSLcc, cWLcc, cTot 
+                };
+            }, [s2GInit, s2GMaint, s2GMid, s2GBldg, s2GFacil, s2UseBonds, s2BondRatio, s2TaxRatio, s2Shift, s2StaffPer, s2DayStaff, s2UnitCost, s2Alloc, s2MixPop, s2Hqs]);
+
+            useEffect(() => {
+                if (subTab === 'step2' && s2LccChartRef.current && s2ImpactChartRef.current && window.Chart) {
+                    if (chartInstance2Lcc.current) chartInstance2Lcc.current.destroy();
+                    chartInstance2Lcc.current = new Chart(s2LccChartRef.current, {
+                        type:'bar', 
+                        data: { labels:step2Calc.cLbl, datasets:[ {label:'単独LCC', data:step2Calc.cSLcc, backgroundColor:'#94a3b8'}, {label:'広域負担額', data:step2Calc.cWLcc, backgroundColor:'#22d3ee'} ]}, 
+                        options: {responsive:true, maintainAspectRatio:false, plugins:{legend:{position:'top'}}}
+                    });
+                    
+                    if (chartInstance2Impact.current) chartInstance2Impact.current.destroy();
+                    chartInstance2Impact.current = new Chart(s2ImpactChartRef.current, {
+                        type:'bar', 
+                        data: { labels:step2Calc.cLbl, datasets:[ {label:'総合効果', data:step2Calc.cTot, backgroundColor:step2Calc.cCol} ]}, 
+                        options: {responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}}
+                    });
+                }
+            }, [step2Calc, subTab]);
+
+            return (
+                <div className="bg-slate-100 text-slate-800 min-h-screen p-4 md:p-6 font-sans">
+                    <div className="max-w-[1600px] mx-auto">
+                        <header className="mb-6 flex flex-col items-center">
+                            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 mb-4 print-hide">総合財政シミュレーター (外部統合ツール)</h1>
+                            <div className="inline-flex bg-slate-200 p-1 rounded-xl gap-1 shadow-inner print-hide">
+                                <button onClick={() => setSubTab('step1')} className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all w-64 ${subTab==='step1' ? 'bg-blue-600 text-white shadow-sm' : 'bg-transparent text-slate-600 hover:bg-white hover:shadow-sm'}`}>STEP1: 10年後 単独更新・将来予測</button>
+                                <button onClick={() => setSubTab('step2')} className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all w-64 ${subTab==='step2' ? 'bg-blue-600 text-white shadow-sm' : 'bg-transparent text-slate-600 hover:bg-white hover:shadow-sm'}`}>STEP2: 西三河広域化 総合財政効果</button>
+                            </div>
+                        </header>
+
+                        {/* STEP 1 */}
+                        {subTab === 'step1' && (
+                            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                                <div className="xl:col-span-4 bg-white p-5 rounded-2xl shadow-sm border border-slate-200 space-y-5">
+                                    <h2 className="text-lg font-bold text-slate-900 border-b border-slate-100 pb-3 flex items-center gap-2">
+                                        <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                                        試算パラメーター
+                                    </h2>
+                                    <div>
+                                        <label className="block text-xs font-semibold text-slate-600 mb-1">試算手法の選択</label>
+                                        <select value={s1Method} onChange={e=>setS1Method(e.target.value)} className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none">
+                                            <option value="compound">【手法1】一律複利モデル（全体年率）</option>
+                                            <option value="weighted">【手法2】費目別（加重平均）モデル ※推奨</option>
+                                            <option value="staged">【手法3】段階的（前半高・後半安定）モデル</option>
+                                        </select>
+                                        <div className="mt-2 text-[10.5px] sm:text-xs text-slate-700 bg-blue-50 p-3 rounded-lg border border-blue-100 leading-relaxed shadow-inner">
+                                            {s1Method === 'compound' && <><span className="font-bold text-slate-800 border-b border-slate-300 pb-0.5 mb-1.5 block">【手法1】一律複利モデル</span>全体のコストに対して一律のインフレ率を適用するシンプルなモデル。<br/><span className="text-emerald-700 font-bold">●シナリオ1(マイルド):</span> 緩やかな進行<br/><span className="text-blue-700 font-bold">●シナリオ2(標準):</span> 安定したインフレ目標<br/><span className="text-amber-700 font-bold">●シナリオ3(高騰警戒):</span> 物価高・円安トレンドの継続</>}
+                                            {s1Method === 'weighted' && <><span className="font-bold text-slate-800 border-b border-slate-300 pb-0.5 mb-1.5 block">【手法2】費目別（加重平均）モデル ※推奨</span>ハード/ソフト/維持管理で異なる物価上昇率を加重平均した実態に近いモデル。<br/><span className="text-emerald-700 font-bold">●保守的推計:</span> 小幅な上昇<br/><span className="text-blue-700 font-bold">●加重平均推計(標準):</span> 近年の上昇トレンドを反映<br/><span className="text-amber-700 font-bold">●IT高騰推計:</span> 大幅なコスト増前提</>}
+                                            {s1Method === 'staged' && <><span className="font-bold text-slate-800 border-b border-slate-300 pb-0.5 mb-1.5 block">【手法3】段階的（前半高・後半安定）モデル</span>導入からの年数で異なる物価上昇率を設定。<br/><span className="text-emerald-700 font-bold">●早期収束型:</span> 直近5年のみインフレ<br/><span className="text-blue-700 font-bold">●2段階標準型(標準):</span> 前半高・後半緩やか<br/><span className="text-amber-700 font-bold">●長期化型:</span> 高インフレ状態が長期継続</>}
+                                        </div>
+                                    </div>
+
+                                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                                        <div><span className="font-bold text-slate-800 text-xs block mb-1">① 現在の確定初期整備費・見積総額 (円)</span><input type="number" value={s1Gross} onChange={e=>setS1Gross(Number(e.target.value))} className="w-full p-2 bg-white border border-slate-300 rounded font-mono text-sm" /></div>
+                                        <div className="border-t border-slate-200 pt-2"><span className="font-bold text-slate-800 text-xs block mb-1">② 最初に除外(控除)する項目 (円)</span>
+                                            <div className="grid grid-cols-3 gap-2">
+                                                <div><label className="block text-[10px] text-slate-600">消防OA</label><input type="number" value={s1ExOA} onChange={e=>setS1ExOA(Number(e.target.value))} className="w-full p-1.5 bg-white border border-slate-300 rounded font-mono text-xs text-right" /></div>
+                                                <div><label className="block text-[10px] text-slate-600">消防無線</label><input type="number" value={s1ExRadio} onChange={e=>setS1ExRadio(Number(e.target.value))} className="w-full p-1.5 bg-white border border-slate-300 rounded font-mono text-xs text-right" /></div>
+                                                <div><label className="block text-[10px] text-slate-600">単独装備等</label><input type="number" value={s1ExOther} onChange={e=>setS1ExOther(Number(e.target.value))} className="w-full p-1.5 bg-white border border-slate-300 rounded font-mono text-xs text-right" /></div>
+                                            </div>
+                                        </div>
+                                        <div className="bg-blue-100 p-2 rounded flex justify-between items-center"><span className="text-xs font-bold text-blue-800">③ 純粋な初期整備費 (①-②)</span><span className="font-mono text-sm font-bold text-blue-900">{step1Calc.netInit.toLocaleString()} 円</span></div>
+                                    </div>
+
+                                    <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 space-y-2">
+                                        <span className="font-bold text-amber-900 text-xs block border-b border-amber-200 pb-1">10年間の維持管理・中間更新コスト (円)</span>
+                                        <div><label className="block text-[10px] text-slate-700">5年分保守費 (前半・後半で2回計上)</label><input type="number" value={s1Maint} onChange={e=>setS1Maint(Number(e.target.value))} className="w-full p-1.5 bg-white border border-slate-300 rounded font-mono text-xs" /></div>
+                                        <div><label className="block text-[10px] text-slate-700">10年分 定期的維持管理業務費</label><input type="number" value={s1Op} onChange={e=>setS1Op(Number(e.target.value))} className="w-full p-1.5 bg-white border border-slate-300 rounded font-mono text-xs" /></div>
+                                        <div><label className="block text-[10px] text-slate-700">5年後 中間更新費 (サーバー等)</label><input type="number" value={s1Mid} onChange={e=>setS1Mid(Number(e.target.value))} className="w-full p-1.5 bg-white border border-slate-300 rounded font-mono text-xs" /></div>
+                                    </div>
+
+                                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                                        <div className="flex justify-between items-center border-b border-slate-200 pb-1 mb-2">
+                                            <span className="font-bold text-slate-800 text-xs">構成市町と負担割合</span>
+                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${step1Calc.totalRatio===100?'bg-blue-100 text-blue-700':'bg-amber-100 text-amber-700'}`}>計 {step1Calc.totalRatio}%</span>
+                                        </div>
+                                        <div className="space-y-2 mb-2">
+                                            {s1Hqs.map((hq, i) => (
+                                                <div key={hq.id} className="flex items-center gap-1">
+                                                    <input type="radio" checked={hq.isBase} onChange={() => { const n=[...s1Hqs]; n.forEach(h=>h.isBase=false); n[i].isBase=true; setS1Hqs(n); }} className="accent-indigo-600" />
+                                                    <input type="text" value={hq.name} onChange={e=>{ const n=[...s1Hqs]; n[i].name=e.target.value; setS1Hqs(n); }} className="w-full p-1 border rounded text-xs font-semibold" />
+                                                    <input type="number" value={hq.ratio} onChange={e=>{ const n=[...s1Hqs]; n[i].ratio=Number(e.target.value); setS1Hqs(n); }} className="w-16 p-1 border rounded text-xs text-right font-mono font-bold text-blue-700" /><span className="text-[10px]">%</span>
+                                                    {s1Hqs.length > 1 ? <button onClick={()=>{ const n=s1Hqs.filter(h=>h.id!==hq.id); if(!n.find(h=>h.isBase)&&n.length>0)n[0].isBase=true; setS1Hqs(n); }} className="text-slate-400 hover:text-red-500 px-1">×</button> : <span className="w-4"></span>}
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <button onClick={()=>{ setS1Hqs([...s1Hqs, {id:'h1_'+Date.now(), name:'新規', ratio:0, isBase:false}]); }} className="w-full py-1 text-xs border border-slate-300 bg-white rounded hover:bg-slate-100 font-bold text-slate-600">＋ 構成市町を追加</button>
+                                    </div>
+
+                                    <div className="space-y-2 mt-4">
+                                        <div className="flex justify-between items-center"><label className="text-xs font-semibold text-slate-600">経過年数</label><span className="text-xs font-bold text-blue-600">{s1Yrs} 年</span></div>
+                                        <input type="range" min="5" max="15" value={s1Yrs} onChange={e=>setS1Yrs(Number(e.target.value))} className="w-full accent-blue-600 mb-3" />
+                                        <label className="block text-xs font-semibold text-slate-600 border-b border-slate-100 pb-1">物価上昇率シナリオ（年率）※手法1に適用</label>
+                                        <div><div className="flex justify-between text-[10px]"><label>シナリオ1</label><span className="font-bold text-emerald-600">{s1R1.toFixed(1)}%</span></div><input type="range" min="0" max="5" step="0.1" value={s1R1} onChange={e=>setS1R1(Number(e.target.value))} className="w-full accent-emerald-500" /></div>
+                                        <div><div className="flex justify-between text-[10px]"><label>シナリオ2 (標準)</label><span className="font-bold text-blue-600">{s1R2.toFixed(1)}%</span></div><input type="range" min="0" max="5" step="0.1" value={s1R2} onChange={e=>setS1R2(Number(e.target.value))} className="w-full accent-blue-600" /></div>
+                                        <div><div className="flex justify-between text-[10px]"><label>シナリオ3</label><span className="font-bold text-amber-600">{s1R3.toFixed(1)}%</span></div><input type="range" min="0" max="5" step="0.1" value={s1R3} onChange={e=>setS1R3(Number(e.target.value))} className="w-full accent-amber-500" /></div>
+                                    </div>
+                                </div>
+
+                                <div className="xl:col-span-8 space-y-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                                            <div className="text-xs font-medium text-slate-500">現在: {s1Yrs}年LCC 総額</div>
+                                            <div className="text-xl font-bold text-slate-900 mt-1 font-mono">{formatOku(step1Calc.curLCC)}</div>
+                                            <div className="text-[10px] text-slate-500 mt-1 space-y-0.5 border-t border-slate-100 pt-1">
+                                                <div className="flex justify-between"><span>初期整備:</span><span>{formatOku(step1Calc.netInit)}</span></div>
+                                                <div className="flex justify-between"><span>運用維持:</span><span>{formatOku(step1Calc.opEx)}</span></div>
+                                            </div>
+                                        </div>
+                                        <div className="bg-blue-50 border border-blue-200 p-4 rounded-xl shadow-sm">
+                                            <div className="text-xs font-medium text-blue-700">将来: {s1Yrs}年後LCC (シナリオ2/標準)</div>
+                                            <div className="text-2xl font-bold text-blue-900 mt-1 font-mono">{formatOku(step1Calc.fLcc2)}</div>
+                                            <div className="text-[10px] text-blue-700 mt-1 border-t border-blue-200/50 pt-1 space-y-0.5">
+                                                <div className="flex justify-between text-slate-500"><span>次期初期(全体):</span><span>{formatOku(step1Calc.fCap2)}</span></div>
+                                                {s1Hqs.map(h => (
+                                                    <div key={`brk_${h.id}`} className={`flex justify-between ${h.isBase?'font-bold':''}`}><span>{h.name}:</span><span>{formatOku(step1Calc.fLcc2*(h.ratio/step1Calc.totalRatio))}</span></div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200">
+                                        <h3 className="text-sm font-bold text-slate-900 mb-2">年次コスト上昇推移予測 (全体LCC)</h3>
+                                        <div className="h-64 relative"><canvas ref={s1ChartRef}></canvas></div>
+                                    </div>
+
+                                    <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 overflow-x-auto">
+                                        <table className="w-full text-left border-collapse text-xs">
+                                            <thead>
+                                                <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
+                                                    <th className="p-2 font-semibold">シナリオ推計</th>
+                                                    <th className="p-2 font-semibold text-right">将来 初期整備費</th>
+                                                    <th className="p-2 font-semibold text-right">将来 {s1Yrs}年LCC総額</th>
+                                                    <th className="p-2 font-semibold text-right text-blue-900">{step1Calc.baseHq.name} 負担分</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 font-mono">
+                                                {step1Calc.scenarios.map((s, i) => (
+                                                    <tr key={i} className="hover:bg-slate-50">
+                                                        <td className={`p-2 font-sans ${s.col}`}>{s.n}</td>
+                                                        <td className="p-2 text-right">{formatOku(s.c)}</td>
+                                                        <td className="p-2 text-right font-bold">{formatOku(s.l)}</td>
+                                                        <td className="p-2 text-right text-blue-900 font-semibold">{formatOku(s.l * step1Calc.basePct)}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* STEP 2 */}
+                        {subTab === 'step2' && (
+                            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                                <div className="xl:col-span-3 space-y-5">
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+                                        <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2">
+                                            <svg className="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                                            広域化センター想定費用 (円)
+                                        </h2>
+                                        <div><label className="block text-[10px] text-slate-600">次期 初期整備費</label><input type="number" value={s2GInit} onChange={e=>setS2GInit(Number(e.target.value))} className="w-full p-1.5 bg-slate-50 border border-slate-300 rounded font-mono text-sm text-right" /></div>
+                                        <div><label className="block text-[10px] text-slate-600">10年間 保守・維持管理費</label><input type="number" value={s2GMaint} onChange={e=>setS2GMaint(Number(e.target.value))} className="w-full p-1.5 bg-slate-50 border border-slate-300 rounded font-mono text-sm text-right" /></div>
+                                        <div><label className="block text-[10px] text-slate-600">5年後 中間更新費</label><input type="number" value={s2GMid} onChange={e=>setS2GMid(Number(e.target.value))} className="w-full p-1.5 bg-slate-50 border border-slate-300 rounded font-mono text-sm text-right" /></div>
+                                        <div><label className="block text-[10px] text-slate-600">土地・建築物等経費</label><input type="number" value={s2GBldg} onChange={e=>setS2GBldg(Number(e.target.value))} className="w-full p-1.5 bg-slate-50 border border-slate-300 rounded font-mono text-sm text-right" /></div>
+                                        <div><label className="block text-[10px] text-slate-600">10年間 施設使用料等</label><input type="number" value={s2GFacil} onChange={e=>setS2GFacil(Number(e.target.value))} className="w-full p-1.5 bg-slate-50 border border-slate-300 rounded font-mono text-sm text-right" /></div>
+                                        <div className="bg-emerald-50 p-2 rounded flex justify-between items-center border border-emerald-100">
+                                            <span className="text-xs font-bold text-emerald-900">広域10年LCC総額</span>
+                                            <span className="font-mono text-base font-bold text-emerald-700">
+                                                {s2UseBonds ? <><span className="line-through text-xs font-normal text-emerald-900/50 mr-2">{formatOku(step2Calc.grossGlobalLCC)}</span>{formatOku(step2Calc.effectiveLCC)}</> : formatOku(step2Calc.grossGlobalLCC)}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+                                        <div className="flex items-start gap-2">
+                                            <input type="checkbox" checked={s2UseBonds} onChange={e=>setS2UseBonds(e.target.checked)} className="mt-1 w-4 h-4 text-emerald-600 rounded cursor-pointer" />
+                                            <label onClick={()=>setS2UseBonds(!s2UseBonds)} className="text-xs font-bold text-slate-800 cursor-pointer leading-tight">地方債（交付税措置）による<br/>実質負担軽減を適用する</label>
+                                        </div>
+                                        <div className={`space-y-2 transition-opacity bg-slate-50 p-2 rounded border border-slate-100 ${!s2UseBonds ? 'opacity-50 pointer-events-none' : ''}`}>
+                                            <div className="flex justify-between items-center text-[10px]">
+                                                <span className="text-slate-600">起債対象 (初期+土地建物)</span>
+                                                <span className="font-mono font-bold">{formatOku(step2Calc.bondTarget)}</span>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div><label className="block text-[10px] text-slate-600">充当率 (%)</label><input type="number" value={s2BondRatio} onChange={e=>setS2BondRatio(Number(e.target.value))} className="w-full p-1 border border-slate-300 rounded text-right text-xs font-mono" /></div>
+                                                <div><label className="block text-[10px] text-slate-600">交付税措置率 (%)</label><input type="number" value={s2TaxRatio} onChange={e=>setS2TaxRatio(Number(e.target.value))} className="w-full p-1 border border-slate-300 rounded text-right text-xs font-mono" /></div>
+                                            </div>
+                                            <div className="pt-1 border-t border-slate-200 flex justify-between items-center">
+                                                <span className="text-[10px] font-bold text-amber-700">実質補填額(控除)</span>
+                                                <span className="font-mono text-sm font-bold text-amber-600">{formatOku(step2Calc.bondSubsidy)}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 space-y-3">
+                                        <h2 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-2 flex items-center gap-2">広域化後の人員体制＆単価</h2>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div><label className="block text-[10px] text-slate-600">交替制（係）</label><input type="number" value={s2Shift} onChange={e=>setS2Shift(Number(e.target.value))} className="w-full p-1.5 border rounded text-center text-sm font-mono" /></div>
+                                            <div><label className="block text-[10px] text-slate-600">1係あたり人数</label><input type="number" value={s2StaffPer} onChange={e=>setS2StaffPer(Number(e.target.value))} className="w-full p-1.5 border rounded text-center text-sm font-mono" /></div>
+                                            <div><label className="block text-[10px] text-slate-600">日勤者</label><input type="number" value={s2DayStaff} onChange={e=>setS2DayStaff(Number(e.target.value))} className="w-full p-1.5 border rounded text-center text-sm font-mono" /></div>
+                                            <div className="bg-blue-50 border border-blue-100 rounded flex flex-col justify-center items-center">
+                                                <span className="text-[10px] font-bold text-blue-800">総人員</span>
+                                                <span className="font-mono text-sm font-bold text-blue-700">{step2Calc.totStaff} 人</span>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-[10px] text-slate-600">職員1人あたり人件費単価（円/年）</label>
+                                            <input type="number" value={s2UnitCost} onChange={e=>setS2UnitCost(Number(e.target.value))} className="w-full p-1.5 border rounded text-right text-sm font-mono" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="xl:col-span-9 space-y-5">
+                                    <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-3 gap-2">
+                                            <div className="flex items-center gap-2 text-xs">
+                                                <label className="font-bold text-slate-700">負担按分方式:</label>
+                                                <select value={s2Alloc} onChange={e=>setS2Alloc(e.target.value)} className="p-1 border border-slate-300 rounded bg-slate-50 font-bold text-emerald-700 outline-none">
+                                                    <option value="pop">人口割 (100%)</option>
+                                                    <option value="fin">基準財政需要額割 (100%)</option>
+                                                    <option value="mix">人口＋財政ミックス (自由設定)</option>
+                                                    <option value="manual">完全手入力</option>
+                                                </select>
+                                                {s2Alloc === 'mix' && (
+                                                    <div className="flex items-center gap-1 bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                                                        <span className="text-[10px] text-emerald-800">人口:</span><input type="number" value={s2MixPop} onChange={e=>{let v=Number(e.target.value); if(v<0)v=0; if(v>100)v=100; setS2MixPop(v);}} className="w-10 p-0.5 border rounded text-right font-mono text-[10px]" /><span className="text-[10px]">%</span>
+                                                        <span className="text-[10px] text-slate-400 mx-1">＋</span>
+                                                        <span className="text-[10px] text-emerald-800">財政:</span><span className="font-mono font-bold text-emerald-700 w-6 text-right">{100-s2MixPop}</span><span className="text-[10px]">%</span>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="text-xs font-bold text-slate-600 bg-slate-100 px-3 py-1 rounded-full">総人口: <span className="font-mono text-sm text-slate-900">{step2Calc.tPop.toLocaleString()}</span> / 総財政: <span className="font-mono text-sm text-slate-900">{step2Calc.tFin.toLocaleString()}</span></div>
+                                        </div>
+
+                                        <div className="overflow-x-auto custom-scrollbar pb-2">
+                                            <table className="w-full text-left border-collapse text-xs min-w-[1200px]">
+                                                <thead>
+                                                    <tr className="bg-slate-100 text-slate-700 border-b border-slate-200">
+                                                        <th rowSpan="2" className="p-2 font-semibold">本部名</th>
+                                                        <th rowSpan="2" className="p-2 font-semibold text-right">人口(人)</th>
+                                                        <th rowSpan="2" className="p-2 font-semibold text-right text-blue-800">財政需要(百万円)</th>
+                                                        <th rowSpan="2" className="p-2 font-semibold text-center">負担(%)</th>
+                                                        <th rowSpan="2" className="p-2 font-semibold text-right border-r">現人員(人)</th>
+                                                        <th colSpan="3" className="p-2 font-semibold text-center bg-slate-200/50 border-r">① 単独更新 見積総額 (全て含む)</th>
+                                                        <th colSpan="3" className="p-2 font-semibold text-center bg-slate-100 border-r">② 最初に控除する項目</th>
+                                                        <th rowSpan="2" className="p-2 font-semibold text-right text-red-900 bg-red-50">③ 純粋単独LCC<br/><span className="text-[9px] font-normal">(①-②)</span></th>
+                                                    </tr>
+                                                    <tr className="bg-slate-50 text-slate-600 border-b border-slate-200">
+                                                        <th className="p-1 font-semibold text-right">次期初期(円)</th><th className="p-1 font-semibold text-right">10年保守(円)</th><th className="p-1 font-semibold text-right border-r">5年中間(円)</th>
+                                                        <th className="p-1 font-semibold text-right">OA(円)</th><th className="p-1 font-semibold text-right">無線(円)</th><th className="p-1 font-semibold text-right border-r">単独等(円)</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {step2Calc.results.map((h, i) => (
+                                                        <tr key={h.id}>
+                                                            <td className="p-1 font-semibold flex items-center gap-1 whitespace-nowrap pt-2"><div className="w-3 h-3 rounded-full" style={{background: h.color}}></div>{h.name}</td>
+                                                            <td className="p-1"><input type="number" value={h.pop} onChange={e=>{const n=[...s2Hqs]; n[i].pop=Number(e.target.value); setS2Hqs(n);}} className="w-full min-w-[70px] p-1 border rounded text-right font-mono" /></td>
+                                                            <td className="p-1 bg-blue-50/30"><input type="number" value={h.finance} onChange={e=>{const n=[...s2Hqs]; n[i].finance=Number(e.target.value); setS2Hqs(n);}} className="w-full min-w-[70px] p-1 border border-blue-200 rounded text-right font-mono" /></td>
+                                                            <td className="p-1 text-center">
+                                                                <input type="number" value={s2Alloc!=='manual' ? (h.ratio*100).toFixed(2) : h.manualRatio} readOnly={s2Alloc!=='manual'} onChange={e=>{const n=[...s2Hqs]; n[i].manualRatio=Number(e.target.value); setS2Hqs(n);}} className={`w-14 p-1 text-right font-mono text-xs font-bold text-emerald-600 outline-none rounded ${s2Alloc==='manual'?'bg-white border border-emerald-300':'bg-transparent border-transparent'}`} />%
+                                                            </td>
+                                                            <td className="p-1 border-r"><input type="number" value={h.currentStaff} onChange={e=>{const n=[...s2Hqs]; n[i].currentStaff=Number(e.target.value); setS2Hqs(n);}} className="w-full min-w-[50px] p-1 border rounded text-right font-mono" /></td>
+                                                            <td className="p-1 bg-slate-100/50"><input type="number" value={h.singleInit} onChange={e=>{const n=[...s2Hqs]; n[i].singleInit=Number(e.target.value); setS2Hqs(n);}} className="w-full min-w-[80px] p-1 border rounded text-right font-mono text-xs" /></td>
+                                                            <td className="p-1 bg-slate-100/50"><input type="number" value={h.singleMaint} onChange={e=>{const n=[...s2Hqs]; n[i].singleMaint=Number(e.target.value); setS2Hqs(n);}} className="w-full min-w-[80px] p-1 border rounded text-right font-mono text-xs" /></td>
+                                                            <td className="p-1 bg-slate-100/50 border-r"><input type="number" value={h.singleMid} onChange={e=>{const n=[...s2Hqs]; n[i].singleMid=Number(e.target.value); setS2Hqs(n);}} className="w-full min-w-[80px] p-1 border rounded text-right font-mono text-xs" /></td>
+                                                            <td className="p-1 bg-slate-50/50"><input type="number" value={h.oaCost} onChange={e=>{const n=[...s2Hqs]; n[i].oaCost=Number(e.target.value); setS2Hqs(n);}} className="w-full min-w-[70px] p-1 border rounded text-right font-mono text-xs" /></td>
+                                                            <td className="p-1 bg-slate-50/50"><input type="number" value={h.radioCost} onChange={e=>{const n=[...s2Hqs]; n[i].radioCost=Number(e.target.value); setS2Hqs(n);}} className="w-full min-w-[70px] p-1 border rounded text-right font-mono text-xs" /></td>
+                                                            <td className="p-1 bg-slate-50/50 border-r"><input type="number" value={h.otherCost} onChange={e=>{const n=[...s2Hqs]; n[i].otherCost=Number(e.target.value); setS2Hqs(n);}} className="w-full min-w-[70px] p-1 border rounded text-right font-mono text-xs" /></td>
+                                                            <td className="p-1 text-right bg-red-50 text-red-900 font-bold">{formatOku(h.sLcc)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-800 text-white">
+                                        <h2 className="text-sm font-bold text-slate-100 border-l-4 border-emerald-500 pl-2 mb-3">10年間の総合財政効果試算（システム負担 ＋ 人件費削減）</h2>
+                                        <div className="overflow-x-auto custom-scrollbar pb-2">
+                                            <table className="w-full text-left border-collapse text-xs min-w-[900px]">
+                                                <thead>
+                                                    <tr className="bg-slate-800 text-slate-300 border-b border-slate-700">
+                                                        <th className="p-2 font-semibold">消防本部名</th>
+                                                        <th className="p-2 font-semibold text-right text-slate-400">【控除後】単独10年LCC</th>
+                                                        <th className="p-2 font-semibold text-right text-slate-400">人員推移 (人)</th>
+                                                        <th className="p-2 font-semibold text-right text-cyan-300 border-l border-slate-700">
+                                                            ① 広域LCC負担額<br/>{s2UseBonds && <span className="text-[9px] text-emerald-200 font-normal">(交付税控除後)</span>}
+                                                        </th>
+                                                        <th className="p-2 font-semibold text-right text-emerald-400 border-l border-slate-700">② LCC 削減額<br/>(単独 - ①)</th>
+                                                        <th className="p-2 font-semibold text-right text-blue-400 border-l border-slate-700">③ 10年間 人件費削減<br/>(削減人数×単価×10年)</th>
+                                                        <th className="p-2 font-semibold text-right text-amber-400 bg-slate-800 border-l border-slate-600">【10年間】総合効果<br/>(② + ③)</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-700 font-mono">
+                                                    {step2Calc.results.map((h, i) => (
+                                                        <tr key={`res_${i}`} className="hover:bg-slate-800">
+                                                            <td className="p-2 font-semibold text-white flex items-center gap-1"><div className="w-3 h-3 rounded-full" style={{background:h.color}}></div>{h.name}</td>
+                                                            <td className="p-2 text-right text-slate-300">{formatOku(h.sLcc)}</td>
+                                                            <td className="p-2 text-right text-slate-300">{h.currentStaff} → {h.fStf.toFixed(1)}</td>
+                                                            <td className="p-2 text-right text-cyan-300 font-bold border-l border-slate-700">{formatOku(h.wLcc)}</td>
+                                                            <td className="p-2 text-right border-l border-slate-700">{formatOkuSigned(h.sysSav)}</td>
+                                                            <td className="p-2 text-right border-l border-slate-700">{formatOkuSigned(h.stfSav)}</td>
+                                                            <td className="p-2 text-right text-base bg-slate-900 border-l border-slate-600">{formatOkuSigned(h.totImp)}</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                                <tfoot className="border-t-2 border-slate-600 bg-slate-800">
+                                                    <tr>
+                                                        <td className="p-2 font-bold text-white text-right">広域化 全体合計</td>
+                                                        <td className="p-2 text-right text-slate-300 font-bold">{formatOku(step2Calc.sumSLcc)}</td>
+                                                        <td className="p-2 text-right text-slate-300 font-bold">{step2Calc.tCurStaff} → {step2Calc.totStaff.toFixed(1)}</td>
+                                                        <td className="p-2 text-right text-cyan-300 font-bold border-l border-slate-700">{formatOku(step2Calc.effectiveLCC)}</td>
+                                                        <td className="p-2 text-right border-l border-slate-700">{formatOkuSigned(step2Calc.sumSysSav)}</td>
+                                                        <td className="p-2 text-right border-l border-slate-700">{formatOkuSigned(step2Calc.sumStfSav)}</td>
+                                                        <td className="p-2 text-right text-lg text-amber-400 bg-slate-900 font-bold border-l border-slate-600">{formatOkuSigned(step2Calc.sumTot)}</td>
+                                                    </tr>
+                                                </tfoot>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                                            <h3 className="text-xs font-bold text-slate-700 mb-2 text-center">10年LCC比較（単独更新 vs 広域化負担）</h3>
+                                            <div className="h-56 relative"><canvas ref={s2LccChartRef}></canvas></div>
+                                        </div>
+                                        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                                            <h3 className="text-xs font-bold text-slate-700 mb-2 text-center">10年間の総合財政効果（LCC削減＋人件費削減）</h3>
+                                            <div className="h-56 relative"><canvas ref={s2ImpactChartRef}></canvas></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        // =========================================================================
+        // メインアプリケーション (タブ切り替え管理)
+        // =========================================================================
+        const App = () => {
+            const tabs = [
+                { 
+                    id: 'nishimikawa', label: '西三河地区', 
+                    data: { title: '西三河地区 消防指令センター 按分シミュレーター', desc: '共通経費を入力し、各本部の負担割合を試算します。', hqs: NISHI_MIKAWA_HQS, initialCost: 300000, runningCost: 20000, label: '西三河' } 
+                },
+                { 
+                    id: 'allmikawa', label: 'オール三河', 
+                    data: { title: 'オール三河 消防指令センター 按分シミュレーター', desc: '西三河・東三河の全域を対象に負担割合を試算します。', hqs: ALL_MIKAWA_HQS, initialCost: 450000, runningCost: 30000, label: 'オール三河' } 
+                },
+                { 
+                    id: 'aichi', label: '愛知県全域', 
+                    data: { title: '愛知県全域 消防指令センター 按分シミュレーター', desc: '愛知県全域の消防本部を対象に、共通経費負担を試算します。', hqs: AICHI_HQS, initialCost: 1000000, runningCost: 100000, label: '愛知県域' } 
+                },
+                {
+                    id: 'comprehensive', label: '総合財政シミュレーター (外部統合)', isComprehensive: true
+                }
+            ];
+            
+            const [activeTabId, setActiveTabId] = useState(tabs[0].id);
+
+            return (
+                <div className="min-h-screen pb-10">
+                    <div className="bg-white border-b border-gray-200 sticky top-0 z-50 print-hide shadow-sm mb-6">
+                        <div className="max-w-[95rem] mx-auto px-4 sm:px-6 lg:px-8">
+                            <nav className="-mb-px flex space-x-8 overflow-x-auto custom-scrollbar" aria-label="Tabs">
+                                {tabs.map(tab => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setActiveTabId(tab.id)}
+                                        className={`whitespace-nowrap py-4 px-1 border-b-2 font-bold text-sm transition-colors ${
+                                            activeTabId === tab.id
+                                                ? 'border-blue-600 text-blue-600'
+                                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                                        }`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </nav>
+                        </div>
+                    </div>
+                    
+                    {tabs.map(tab => (
+                        <div key={tab.id} className={activeTabId === tab.id ? 'block' : 'hidden'}>
+                            {tab.isComprehensive ? <ComprehensiveSimulator /> : <Simulator config={tab.data} />}
+                        </div>
+                    ))}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
