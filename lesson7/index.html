@@ -55,7 +55,32 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useMemo, useRef } = React;
+        const { useState, useEffect, useMemo, useRef, useCallback } = React;
+
+        // =========================================================================
+        // オートセーブ用 カスタムフック (LocalStorage連携)
+        // =========================================================================
+        function usePersistentState(key, initialValue) {
+            const [state, setState] = useState(() => {
+                try {
+                    const item = window.localStorage.getItem(key);
+                    return item ? JSON.parse(item) : initialValue;
+                } catch (error) {
+                    console.warn(`Error reading localStorage key "${key}":`, error);
+                    return initialValue;
+                }
+            });
+
+            useEffect(() => {
+                try {
+                    window.localStorage.setItem(key, JSON.stringify(state));
+                } catch (error) {
+                    console.warn(`Error setting localStorage key "${key}":`, error);
+                }
+            }, [key, state]);
+
+            return [state, setState];
+        }
 
         // =========================================================================
         // 共通データ・コンポーネント群 (既存の3タブ用)
@@ -178,19 +203,20 @@
         ];
 
         const Simulator = ({ config }) => {
-            const [baseInitialCost, setBaseInitialCost] = useState(config.initialCost);
-            const [baseRunningCost, setBaseRunningCost] = useState(config.runningCost);
-            const [inflation, setInflation] = useState(INFLATION_SCENARIOS[0]);
+            // useState を usePersistentState に変更し、タブID(config.id)をキーに含めて独立保存
+            const [baseInitialCost, setBaseInitialCost] = usePersistentState(`${config.id}_baseInitialCost`, config.initialCost);
+            const [baseRunningCost, setBaseRunningCost] = usePersistentState(`${config.id}_baseRunningCost`, config.runningCost);
+            const [inflation, setInflation] = usePersistentState(`${config.id}_inflation`, INFLATION_SCENARIOS[0]);
             
-            const [headquarters, setHeadquarters] = useState(() => JSON.parse(JSON.stringify(config.hqs)));
+            const [headquarters, setHeadquarters] = usePersistentState(`${config.id}_hqs`, config.hqs);
 
             const initialCost = useMemo(() => Math.round(baseInitialCost * inflation.rate), [baseInitialCost, inflation]);
             const runningCost = useMemo(() => Math.round(baseRunningCost * inflation.rate), [baseRunningCost, inflation]);
 
-            const [selectedPattern, setSelectedPattern] = useState(PRESETS[0]);
-            const [weightEqual, setWeightEqual] = useState(PRESETS[0].equal);
-            const [weightPop, setWeightPop] = useState(PRESETS[0].pop);
-            const [weightFinance, setWeightFinance] = useState(PRESETS[0].finance);
+            const [selectedPattern, setSelectedPattern] = usePersistentState(`${config.id}_pattern`, PRESETS[0]);
+            const [weightEqual, setWeightEqual] = usePersistentState(`${config.id}_wEqual`, PRESETS[0].equal);
+            const [weightPop, setWeightPop] = usePersistentState(`${config.id}_wPop`, PRESETS[0].pop);
+            const [weightFinance, setWeightFinance] = usePersistentState(`${config.id}_wFin`, PRESETS[0].finance);
             const [weightError, setWeightError] = useState('');
 
             useEffect(() => {
@@ -647,7 +673,7 @@
         };
 
         const ComprehensiveSimulator = () => {
-            const [subTab, setSubTab] = useState('step1');
+            const [subTab, setSubTab] = usePersistentState('comp_subTab', 'step1');
 
             // Format Helpers
             const formatOku = amount => {
@@ -662,43 +688,43 @@
                 return `±0 億円`;
             };
 
-            // ---- STEP 1 State ----
-            const [s1Method, setS1Method] = useState('weighted');
-            const [s1Gross, setS1Gross] = useState(2645165600);
-            const [s1ExOA, setS1ExOA] = useState(0);
-            const [s1ExRadio, setS1ExRadio] = useState(0);
-            const [s1ExOther, setS1ExOther] = useState(0);
-            const [s1Maint, setS1Maint] = useState(397939102);
-            const [s1Op, setS1Op] = useState(151649630);
-            const [s1Mid, setS1Mid] = useState(601382100);
-            const [s1Hqs, setS1Hqs] = useState([
+            // ---- STEP 1 State (オートセーブ化) ----
+            const [s1Method, setS1Method] = usePersistentState('comp_s1Method', 'weighted');
+            const [s1Gross, setS1Gross] = usePersistentState('comp_s1Gross', 2645165600);
+            const [s1ExOA, setS1ExOA] = usePersistentState('comp_s1ExOA', 0);
+            const [s1ExRadio, setS1ExRadio] = usePersistentState('comp_s1ExRadio', 0);
+            const [s1ExOther, setS1ExOther] = usePersistentState('comp_s1ExOther', 0);
+            const [s1Maint, setS1Maint] = usePersistentState('comp_s1Maint', 397939102);
+            const [s1Op, setS1Op] = usePersistentState('comp_s1Op', 151649630);
+            const [s1Mid, setS1Mid] = usePersistentState('comp_s1Mid', 601382100);
+            const [s1Hqs, setS1Hqs] = usePersistentState('comp_s1Hqs', [
                 { id: 'h1_0', name: '岡崎市', ratio: 85, isBase: true },
                 { id: 'h1_1', name: '幸田町', ratio: 15, isBase: false }
             ]);
-            const [s1Yrs, setS1Yrs] = useState(10);
-            const [s1R1, setS1R1] = useState(1.0);
-            const [s1R2, setS1R2] = useState(2.0);
-            const [s1R3, setS1R3] = useState(3.0);
+            const [s1Yrs, setS1Yrs] = usePersistentState('comp_s1Yrs', 10);
+            const [s1R1, setS1R1] = usePersistentState('comp_s1R1', 1.0);
+            const [s1R2, setS1R2] = usePersistentState('comp_s1R2', 2.0);
+            const [s1R3, setS1R3] = usePersistentState('comp_s1R3', 3.0);
             
             const s1ChartRef = useRef(null);
             const chartInstance1 = useRef(null);
 
-            // ---- STEP 2 State ----
-            const [s2GInit, setS2GInit] = useState(5000000000);
-            const [s2GMaint, setS2GMaint] = useState(2500000000);
-            const [s2GMid, setS2GMid] = useState(1200000000);
-            const [s2GBldg, setS2GBldg] = useState(1000000000);
-            const [s2GFacil, setS2GFacil] = useState(300000000);
-            const [s2UseBonds, setS2UseBonds] = useState(false);
-            const [s2BondRatio, setS2BondRatio] = useState(100);
-            const [s2TaxRatio, setS2TaxRatio] = useState(50);
-            const [s2Shift, setS2Shift] = useState(3);
-            const [s2StaffPer, setS2StaffPer] = useState(15);
-            const [s2DayStaff, setS2DayStaff] = useState(6);
-            const [s2UnitCost, setS2UnitCost] = useState(8000000);
-            const [s2Alloc, setS2Alloc] = useState('pop');
-            const [s2MixPop, setS2MixPop] = useState(50);
-            const [s2Hqs, setS2Hqs] = useState([
+            // ---- STEP 2 State (オートセーブ化) ----
+            const [s2GInit, setS2GInit] = usePersistentState('comp_s2GInit', 5000000000);
+            const [s2GMaint, setS2GMaint] = usePersistentState('comp_s2GMaint', 2500000000);
+            const [s2GMid, setS2GMid] = usePersistentState('comp_s2GMid', 1200000000);
+            const [s2GBldg, setS2GBldg] = usePersistentState('comp_s2GBldg', 1000000000);
+            const [s2GFacil, setS2GFacil] = usePersistentState('comp_s2GFacil', 300000000);
+            const [s2UseBonds, setS2UseBonds] = usePersistentState('comp_s2UseBonds', false);
+            const [s2BondRatio, setS2BondRatio] = usePersistentState('comp_s2BondRatio', 100);
+            const [s2TaxRatio, setS2TaxRatio] = usePersistentState('comp_s2TaxRatio', 50);
+            const [s2Shift, setS2Shift] = usePersistentState('comp_s2Shift', 3);
+            const [s2StaffPer, setS2StaffPer] = usePersistentState('comp_s2StaffPer', 15);
+            const [s2DayStaff, setS2DayStaff] = usePersistentState('comp_s2DayStaff', 6);
+            const [s2UnitCost, setS2UnitCost] = usePersistentState('comp_s2UnitCost', 8000000);
+            const [s2Alloc, setS2Alloc] = usePersistentState('comp_s2Alloc', 'pop');
+            const [s2MixPop, setS2MixPop] = usePersistentState('comp_s2MixPop', 50);
+            const [s2Hqs, setS2Hqs] = usePersistentState('comp_s2Hqs', [
                 { id: 'okazaki', name: '岡崎市', pop: 383000, finance: 58000, currentStaff: 24, singleInit: 3500000000, singleMaint: 1549000000, singleMid: 601000000, oaCost: 0, radioCost: 0, otherCost: 0, color: '#3b82f6', manualRatio: 0 },
                 { id: 'toyota', name: '豊田市', pop: 416000, finance: 62000, currentStaff: 25, singleInit: 3600000000, singleMaint: 1600000000, singleMid: 700000000, oaCost: 0, radioCost: 0, otherCost: 0, color: '#ef4444', manualRatio: 0 },
                 { id: 'nishio', name: '西尾市', pop: 169000, finance: 31000, currentStaff: 12, singleInit: 1800000000, singleMaint: 800000000, singleMid: 300000000, oaCost: 0, radioCost: 0, otherCost: 0, color: '#f59e0b', manualRatio: 0 },
@@ -1168,27 +1194,34 @@
             const tabs = [
                 { 
                     id: 'nishimikawa', label: '西三河地区', 
-                    data: { title: '西三河地区 消防指令センター 按分シミュレーター', desc: '共通経費を入力し、各本部の負担割合を試算します。', hqs: NISHI_MIKAWA_HQS, initialCost: 300000, runningCost: 20000, label: '西三河' } 
+                    data: { id: 'nishimikawa', title: '西三河地区 消防指令センター 按分シミュレーター', desc: '共通経費を入力し、各本部の負担割合を試算します。', hqs: NISHI_MIKAWA_HQS, initialCost: 300000, runningCost: 20000, label: '西三河' } 
                 },
                 { 
                     id: 'allmikawa', label: 'オール三河', 
-                    data: { title: 'オール三河 消防指令センター 按分シミュレーター', desc: '西三河・東三河の全域を対象に負担割合を試算します。', hqs: ALL_MIKAWA_HQS, initialCost: 450000, runningCost: 30000, label: 'オール三河' } 
+                    data: { id: 'allmikawa', title: 'オール三河 消防指令センター 按分シミュレーター', desc: '西三河・東三河の全域を対象に負担割合を試算します。', hqs: ALL_MIKAWA_HQS, initialCost: 450000, runningCost: 30000, label: 'オール三河' } 
                 },
                 { 
                     id: 'aichi', label: '愛知県全域', 
-                    data: { title: '愛知県全域 消防指令センター 按分シミュレーター', desc: '愛知県全域の消防本部を対象に、共通経費負担を試算します。', hqs: AICHI_HQS, initialCost: 1000000, runningCost: 100000, label: '愛知県域' } 
+                    data: { id: 'aichi', title: '愛知県全域 消防指令センター 按分シミュレーター', desc: '愛知県全域の消防本部を対象に、共通経費負担を試算します。', hqs: AICHI_HQS, initialCost: 1000000, runningCost: 100000, label: '愛知県域' } 
                 },
                 {
                     id: 'comprehensive', label: '総合財政シミュレーター (外部統合)', isComprehensive: true
                 }
             ];
             
-            const [activeTabId, setActiveTabId] = useState(tabs[0].id);
+            const [activeTabId, setActiveTabId] = usePersistentState('app_activeTab', tabs[0].id);
+
+            const handleResetAll = () => {
+                if (window.confirm('入力したすべての数値や設定を初期状態にリセットしますか？\n（この操作は取り消せません）')) {
+                    window.localStorage.clear();
+                    window.location.reload();
+                }
+            };
 
             return (
                 <div className="min-h-screen pb-10">
                     <div className="bg-white border-b border-gray-200 sticky top-0 z-50 print-hide shadow-sm mb-6">
-                        <div className="max-w-[95rem] mx-auto px-4 sm:px-6 lg:px-8">
+                        <div className="max-w-[95rem] mx-auto px-4 sm:px-6 lg:px-8 flex justify-between items-center">
                             <nav className="-mb-px flex space-x-8 overflow-x-auto custom-scrollbar" aria-label="Tabs">
                                 {tabs.map(tab => (
                                     <button
@@ -1204,6 +1237,10 @@
                                     </button>
                                 ))}
                             </nav>
+                            <button onClick={handleResetAll} className="flex items-center gap-1.5 text-xs font-bold text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded transition-colors whitespace-nowrap">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                                全ての設定を初期化
+                            </button>
                         </div>
                     </div>
                     
